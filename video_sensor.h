@@ -492,13 +492,9 @@ public:
 protected:
     void setup() override {
         char path[256];
-        snprintf(path, sizeof(path), "%s/%s/%03d_imu.csv",
+        snprintf(path, sizeof(path), "%s/%s/%03d_imu.jsonl",
                  session_dir_.c_str(), camera_name_.c_str(), session_num_);
         fp_ = fopen(path, "w");
-        if (fp_) {
-            fprintf(fp_, "frame_idx,ts_us,ax_mg,ay_mg,az_mg,"
-                    "gx_mdps,gy_mdps,gz_mdps,exp_start_us,exp_end_us\n");
-        }
     }
 
     void collect() override {

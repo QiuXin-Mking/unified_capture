@@ -180,8 +180,8 @@ static uint32_t imu_read_frame_vertical(const uint8_t* bgr, int w, int h, uint8_
     return 0;
 }
 
-// ---- 解析 IMU 数据, 写 CSV ----
-// CSV: frame_idx,ts_us,ax_mg,ay_mg,az_mg,gx_mdps,gy_mdps,gz_mdps,exp_start_us,exp_end_us
+// ---- 解析 IMU 数据, 写 JSONL ----
+// {"frame_idx":N,"t_us":N,"ax_mg":f,"ay_mg":f,"az_mg":f,"gx_mdps":f,"gy_mdps":f,"gz_mdps":f,"exp_start_us":N,"exp_end_us":N}
 static void imu_parse_and_write(const uint8_t* buf, uint32_t len,
                                 uint64_t frame_idx, FILE* fp) {
     if (len < IMU_GROUP) return;
@@ -210,7 +210,11 @@ static void imu_parse_and_write(const uint8_t* buf, uint32_t len,
         // 跳过无效样本
         if ((ax == -1 && ay == -1 && az == -1) || gx == -32768) continue;
 
-        fprintf(fp, "%llu,%u,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%llu,%llu\n",
+        fprintf(fp,
+                "{\"frame_idx\":%llu,\"t_us\":%u,"
+                "\"ax_mg\":%.3f,\"ay_mg\":%.3f,\"az_mg\":%.3f,"
+                "\"gx_mdps\":%.3f,\"gy_mdps\":%.3f,\"gz_mdps\":%.3f,"
+                "\"exp_start_us\":%llu,\"exp_end_us\":%llu}\n",
                 (unsigned long long)frame_idx, t_us,
                 ax * ACC_SENS, ay * ACC_SENS, az * ACC_SENS,
                 gx * GYR_SENS, gy * GYR_SENS, gz * GYR_SENS,
