@@ -38,6 +38,7 @@ extern "C" {
 #include "USBCam_API.h"
 }
 
+#include "camera_config.h"
 #include "sensor.h"
 #include "video_sensor.h"
 #include "encoder_sensor.h"
