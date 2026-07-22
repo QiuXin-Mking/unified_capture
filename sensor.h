@@ -15,35 +15,7 @@
 #include <thread>
 #include <vector>
 
-// ============================================================
-// 统一时间工具 (所有 Sensor 共用)
-// ============================================================
-extern struct timespec g_t0;
-
-static inline uint64_t elapsed_us() {
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    return (uint64_t)(now.tv_sec - g_t0.tv_sec) * 1000000ULL +
-           (uint64_t)(now.tv_nsec - g_t0.tv_nsec) / 1000ULL;
-}
-
-// ============================================================
-// 递归创建目录 (等效 mkdir -p)
-// ============================================================
-static inline int mkdir_p(const char* path, mode_t mode) {
-    char tmp[512];
-    snprintf(tmp, sizeof(tmp), "%s", path);
-    size_t len = strlen(tmp);
-    if (len > 0 && tmp[len - 1] == '/') tmp[len - 1] = '\0';
-    for (char* p = tmp + 1; *p; p++) {
-        if (*p == '/') {
-            *p = '\0';
-            mkdir(tmp, mode);
-            *p = '/';
-        }
-    }
-    return mkdir(tmp, mode);
-}
+#include "time_utils.h"
 
 // ============================================================
 // SimpleBarrier — C++20 std::barrier 替代 (兼容 GCC 10)
