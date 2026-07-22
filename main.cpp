@@ -41,6 +41,7 @@ extern "C" {
 #include "camera_config.h"
 #include "sensor.h"
 #include "video_sensor.h"
+#include "imu_sensor.h"
 #include "encoder_sensor.h"
 #include "vive_tracker.h"
 
