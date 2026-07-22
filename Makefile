@@ -47,7 +47,9 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
-main.o: main.cpp sensor.h video_sensor.h encoder_sensor.h vive_tracker.h imu_decode.h as5600.h
+main.o: main.cpp sensor.h camera_config.h barrier.h time_utils.h \
+        video_sensor.h imu_sensor.h encoder_sensor.h vive_tracker.h \
+        mpp_encoder.h frame_queue.h imu_decode.h vive_usb.h as5600.h
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ main.cpp
 
 as5600.o: as5600.c as5600.h
