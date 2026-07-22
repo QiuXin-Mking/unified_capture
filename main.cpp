@@ -76,11 +76,15 @@ struct CamEntry {
     v4l2_dev_sys_data_t* dev_ptr = nullptr;  // 匹配到的设备 (resolve 后填写)
 };
 
+// CameraConfig: name, vid, pid, group_order, width, height, fps, bitrate, gop, has_imu, imu_orientation, output_h265, output_y8
 static CamEntry CAMS[] = {
-    {{"jhh2_left",  JHH2_VID, JHH2_PID, 0, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP}, true, nullptr},
-    {{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP}, true, nullptr},
-    {{"jhh04",      SIX_VID,  SIX_PID,  0, 3104,  480, 30,  4000000, 30, true,  ImuOrientation::VERTICAL_LEFT},  true, nullptr},
-    {{"jhh02",      SIX_VID,  SIX_PID,  1, 3104,  480, 30,  4000000, 30, true,  ImuOrientation::HORIZONTAL_TOP}, true, nullptr},
+    // JHH2 双目: H.265 + Y8
+    {{"jhh2_left",  JHH2_VID, JHH2_PID, 0, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
+    {{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
+    // JHH04 四目: 仅 Y8 (不给 SLAM 浪费 H.265 编码)
+    {{"jhh04",      SIX_VID,  SIX_PID,  0, 3104,  480, 30,  4000000, 30, true,  ImuOrientation::VERTICAL_LEFT,  false, true},  true, nullptr},
+    // JHH02 双目: H.265 + Y8
+    {{"jhh02",      SIX_VID,  SIX_PID,  1, 3104,  480, 30,  4000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
 };
 static const int N_CAMS = sizeof(CAMS) / sizeof(CAMS[0]);
 

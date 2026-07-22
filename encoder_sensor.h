@@ -45,12 +45,9 @@ protected:
         }
 
         char path[256];
-        snprintf(path, sizeof(path), "%s/encoder.csv",
+        snprintf(path, sizeof(path), "%s/encoder.jsonl",
                  session_dir_.c_str());
         fp_ = fopen(path, "w");
-        if (fp_) {
-            fprintf(fp_, "ts_us,raw_angle,degrees,magnet_detected\n");
-        }
 
         printf("[as5600] setup OK (bus=%s, addr=0x%02x, interval=%dus)\n",
                i2c_path_.c_str(), i2c_addr_, interval_us_);
@@ -67,7 +64,8 @@ protected:
             uint8_t magnet = as5600_detect_magnet(dev_);
 
             if (fp_) {
-                fprintf(fp_, "%llu,%u,%.3f,%u\n",
+                fprintf(fp_,
+                        "{\"ts_us\":%llu,\"raw_angle\":%u,\"degrees\":%.3f,\"magnet_detected\":%u}\n",
                         (unsigned long long)ts_now, raw, deg, magnet);
                 fflush(fp_);
             }

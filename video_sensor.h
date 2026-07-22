@@ -199,6 +199,8 @@ struct CameraConfig {
     int  gop;
     bool has_imu;
     ImuOrientation imu_orientation;  // 仅 has_imu=true 时有效
+    bool output_h265 = true;         // 是否编码 H.265 → MKV
+    bool output_y8  = true;          // 是否写 Y8 原始灰度文件
 };
 
 class VideoSensor : public Sensor {
@@ -246,54 +248,69 @@ protected:
         }
 
         // ── 2. MPP 编码器 ──
-        if (!mpp_.init(cfg_.width, cfg_.height, cfg_.bitrate, cfg_.fps, cfg_.gop)) {
-            fprintf(stderr, "[%s] MPP init failed\n", cfg_.name);
-            return;
+        if (cfg_.output_h265) {
+            if (!mpp_.init(cfg_.width, cfg_.height, cfg_.bitrate, cfg_.fps, cfg_.gop)) {
+                fprintf(stderr, "[%s] MPP init failed\n", cfg_.name);
+                return;
+            }
         }
 
         // ── 3. FIFO + FFmpeg MKV 封装 ──
-        snprintf(path, sizeof(path), "/tmp/h265_%s_fifo", cfg_.name);
-        fifo_path_ = path;
-        unlink(fifo_path_.c_str());
-        if (mkfifo(fifo_path_.c_str(), 0666) < 0) {
-            perror("mkfifo");
-            return;
+        if (cfg_.output_h265) {
+            snprintf(path, sizeof(path), "/tmp/h265_%s_fifo", cfg_.name);
+            fifo_path_ = path;
+            unlink(fifo_path_.c_str());
+            if (mkfifo(fifo_path_.c_str(), 0666) < 0) {
+                perror("mkfifo");
+                return;
+            }
+
+            ffmpeg_pid_ = fork();
+            if (ffmpeg_pid_ < 0) {
+                perror("fork ffmpeg");
+                return;
+            }
+            if (ffmpeg_pid_ == 0) {
+                // 子进程: ffmpeg 读 FIFO → MKV
+                snprintf(path, sizeof(path), "%s/%03d.mkv",
+                         out_dir_.c_str(), session_num_);
+                char fps_s[16];
+                snprintf(fps_s, sizeof(fps_s), "%d", cfg_.fps);
+                execlp("ffmpeg", "ffmpeg",
+                       "-y", "-hide_banner", "-loglevel", "error",
+                       "-f", "hevc", "-r", fps_s,
+                       "-i", fifo_path_.c_str(),
+                       "-c", "copy",
+                       path, NULL);
+                perror("exec ffmpeg");
+                _exit(1);
+            }
+
+            // 打开 FIFO 写入端 (阻塞直到 ffmpeg 打开读端)
+            fifo_fd_ = open(fifo_path_.c_str(), O_WRONLY);
+            if (fifo_fd_ < 0) {
+                perror("open fifo for write");
+                return;
+            }
+            fifo_fp_ = fdopen(fifo_fd_, "w");
         }
 
-        ffmpeg_pid_ = fork();
-        if (ffmpeg_pid_ < 0) {
-            perror("fork ffmpeg");
-            return;
-        }
-        if (ffmpeg_pid_ == 0) {
-            // 子进程: ffmpeg 读 FIFO → MKV
-            snprintf(path, sizeof(path), "%s/%03d.mkv",
+        // ── 4. Y8 原始灰度文件 ──
+        if (cfg_.output_y8) {
+            snprintf(path, sizeof(path), "%s/%03d.y8",
                      out_dir_.c_str(), session_num_);
-            char fps_s[16];
-            snprintf(fps_s, sizeof(fps_s), "%d", cfg_.fps);
-            execlp("ffmpeg", "ffmpeg",
-                   "-y", "-hide_banner", "-loglevel", "error",
-                   "-f", "hevc", "-r", fps_s,
-                   "-i", fifo_path_.c_str(),
-                   "-c", "copy",
-                   path, NULL);
-            perror("exec ffmpeg");
-            _exit(1);
+            y8_fp_ = fopen(path, "w");
+            if (!y8_fp_) {
+                fprintf(stderr, "[%s] cannot create Y8 file %s\n", cfg_.name, path);
+            }
         }
 
-        // 打开 FIFO 写入端 (阻塞直到 ffmpeg 打开读端)
-        fifo_fd_ = open(fifo_path_.c_str(), O_WRONLY);
-        if (fifo_fd_ < 0) {
-            perror("open fifo for write");
-            return;
-        }
-        fifo_fp_ = fdopen(fifo_fd_, "w");
-
-        // ── 4. 启动 TSTC 流线程 ──
+        // ── 5. 启动 TSTC 流线程 ──
         pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
 
-        printf("[%s] setup OK  (dev=%s, %dx%d@%dfps)\n",
-               cfg_.name, dev_info_.Device_Path, cfg_.width, cfg_.height, cfg_.fps);
+        printf("[%s] setup OK  (dev=%s, %dx%d@%dfps, H265=%c, Y8=%c)\n",
+               cfg_.name, dev_info_.Device_Path, cfg_.width, cfg_.height, cfg_.fps,
+               cfg_.output_h265 ? 'Y' : 'N', cfg_.output_y8 ? 'Y' : 'N');
         initialized_ = true;
     }
 
@@ -345,10 +362,17 @@ protected:
                     imu_queue_.try_push(std::move(imu_frame));
                 }
 
-                // → BGR → NV12 → MPP H.265 → FIFO
+                // → BGR → NV12 → MPP H.265 → FIFO + Y8
                 bgr_to_nv12(bgr, w, h, nv12);
-                size_t h265_bytes = mpp_.put(nv12, fifo_fp_);
-                total_h265 += h265_bytes;
+
+                if (cfg_.output_h265) {
+                    size_t h265_bytes = mpp_.put(nv12, fifo_fp_);
+                    total_h265 += h265_bytes;
+                }
+
+                if (cfg_.output_y8 && y8_fp_) {
+                    fwrite(nv12, 1, cfg_.width * cfg_.height, y8_fp_);
+                }
             }
 
             delete[] bgr;
@@ -360,22 +384,28 @@ protected:
         TST_USBCam_EVENT_LoopMode(tstc_handle_, 0);
 
         // Flush MPP
-        printf("[%s] flushing encoder (%zu frames, %.1f MB H.265)...\n",
-               cfg_.name, frame_idx, total_h265 / 1048576.0);
-        mpp_.flush(fifo_fp_);
+        if (cfg_.output_h265) {
+            printf("[%s] flushing encoder (%zu frames, %.1f MB H.265)...\n",
+                   cfg_.name, frame_idx, total_h265 / 1048576.0);
+            mpp_.flush(fifo_fp_);
+        } else {
+            printf("[%s] stopped (%zu frames)\n", cfg_.name, frame_idx);
+        }
 
         delete[] nv12;
         tjDestroy(tj);
     }
 
     void teardown() override {
-        if (fifo_fp_) { fclose(fifo_fp_); fifo_fp_ = nullptr; fifo_fd_ = -1; }
+        if (cfg_.output_h265) {
+            if (fifo_fp_) { fclose(fifo_fp_); fifo_fp_ = nullptr; fifo_fd_ = -1; }
 
-        // 等待 ffmpeg 退出 (FIFO 读端收到 EOF)
-        if (ffmpeg_pid_ > 0) {
-            int status;
-            waitpid(ffmpeg_pid_, &status, 0);
-            printf("[%s] ffmpeg exited (%d)\n", cfg_.name, WEXITSTATUS(status));
+            // 等待 ffmpeg 退出 (FIFO 读端收到 EOF)
+            if (ffmpeg_pid_ > 0) {
+                int status;
+                waitpid(ffmpeg_pid_, &status, 0);
+                printf("[%s] ffmpeg exited (%d)\n", cfg_.name, WEXITSTATUS(status));
+            }
         }
 
         // 等待 TSTC 流线程
@@ -384,10 +414,13 @@ protected:
         }
 
         // 清理 MPP
-        mpp_.destroy();
+        if (cfg_.output_h265) { mpp_.destroy(); }
 
         // 清理 FIFO
-        unlink(fifo_path_.c_str());
+        if (cfg_.output_h265) { unlink(fifo_path_.c_str()); }
+
+        // 关闭 Y8 文件
+        if (y8_fp_) { fclose(y8_fp_); y8_fp_ = nullptr; }
 
         printf("[%s] teardown OK\n", cfg_.name);
     }
@@ -414,6 +447,9 @@ private:
     std::string fifo_path_;
     int fifo_fd_ = -1;
     FILE* fifo_fp_ = nullptr;
+
+    // Y8
+    FILE* y8_fp_ = nullptr;
 
     // IMU queue
     FrameQueue imu_queue_{4};

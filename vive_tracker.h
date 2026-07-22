@@ -119,15 +119,13 @@ protected:
     void setup() override {
         // 创建 CSV, session 根目录下与 encoder.csv 同级
         char path[256];
-        snprintf(path, sizeof(path), "%s/tracker_pose.csv",
+        snprintf(path, sizeof(path), "%s/tracker.jsonl",
                  session_dir_.c_str());
         fp_ = fopen(path, "w");
         if (!fp_) {
             fprintf(stderr, "[vive] 无法创建 %s\n", path);
             return;
         }
-        fprintf(fp_, "ts_us,timecode,codename,x,y,z,qw,qx,qy,qz\n");
-        fflush(fp_);
 
         // 先自动 unbind usbfs (解决 LIBUSB_ERROR_BUSY), 记下设备名用于回绑
         unbind_usbfs_for_vive(dev_name_);
@@ -213,7 +211,9 @@ private:
 
         uint64_t ts_us = elapsed_us();
         fprintf(s_instance_->fp_,
-                "%llu,%llu,%s,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+                "{\"ts_us\":%llu,\"timecode\":%llu,\"codename\":\"%s\","
+                "\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,"
+                "\"qw\":%.6f,\"qx\":%.6f,\"qy\":%.6f,\"qz\":%.6f}\n",
                 (unsigned long long)ts_us,
                 (unsigned long long)timecode,
                 so->codename,
