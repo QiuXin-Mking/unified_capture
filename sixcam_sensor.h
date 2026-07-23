@@ -210,40 +210,51 @@ protected:
             ch.y8_fp = fopen(path, "w");
         }
 
-        // ── 6. ★ 六目模组全局锁: 等独立JHH2完成 → JHH04 → JHH02 ──
-        //    DEAL_WITH_INIT 必须在锁内, 保证 JHH2独立先于 JHH04 启动
-        fprintf(stderr, "[sixcam] DBG: acquiring stream_start_mutex...\n");
+        // ── 6. JHH04: 不参与锁 (VID/PID=1bcf:2d51 独占) ──
         {
-            std::lock_guard<std::mutex> lock(g_stream_start_mutex);
-            fprintf(stderr, "[sixcam] DBG: LOCKED\n");
+            auto& ch = ch_[0];
+            fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT...\n", ch.name);
+            if (TST_USBCam_Video_DEAL_WITH_INIT(ch.tstc_handle, ch.dev_fd) != 0) {
+                fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", ch.name);
+                return;
+            }
+            fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
+            pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
+            usleep(200000);
+            fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1)...\n", ch.name);
+            TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
+            fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
+            ch.initialized = true;
+            printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
+                   ch.name, ch.width, ch.height, ch.fps,
+                   ch.output_h265 ? 'Y' : 'N', ch.output_y8 ? 'Y' : 'N');
+        }
 
-            for (int i = 0; i < 2; i++) {
-                auto& ch = ch_[i];
-
-                // DEAL_WITH_INIT (之前只做了 CREATE+open)
+        // ── 7. JHH02: 必须上锁 (VID/PID=1bcf:2d50, 与独立JHH2冲突) ──
+        {
+            auto& ch = ch_[1];
+            fprintf(stderr, "[%s] DBG: acquiring stream_start_mutex...\n", ch.name);
+            {
+                std::lock_guard<std::mutex> lock(g_stream_start_mutex);
+                fprintf(stderr, "[%s] DBG: LOCKED\n", ch.name);
                 fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT...\n", ch.name);
                 if (TST_USBCam_Video_DEAL_WITH_INIT(ch.tstc_handle, ch.dev_fd) != 0) {
                     fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", ch.name);
                     return;
                 }
-                fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT OK\n", ch.name);
-
-                // stream 线程 + STREAM_STATUS
                 fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
                 pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
                 usleep(200000);
-
                 fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1)...\n", ch.name);
                 TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
                 fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
-
-                ch.initialized = true;
-                printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
-                       ch.name, ch.width, ch.height, ch.fps,
-                       ch.output_h265 ? 'Y' : 'N', ch.output_y8 ? 'Y' : 'N');
             }
+            fprintf(stderr, "[%s] DBG: stream_start_mutex released\n", ch.name);
+            ch.initialized = true;
+            printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
+                   ch.name, ch.width, ch.height, ch.fps,
+                   ch.output_h265 ? 'Y' : 'N', ch.output_y8 ? 'Y' : 'N');
         }
-        fprintf(stderr, "[sixcam] DBG: stream_start_mutex released\n");
     }
 
     void collect() override {
