@@ -71,7 +71,7 @@ protected:
         out_dir_ = path;
         mkdir_p(out_dir_.c_str(), 0755);
 
-        // ── 1. TSTC SDK 初始化 ──
+        // ── 1. TSTC SDK 初始化 (全局锁保护, 避免同 VID/PID 设备冲突) ──
         fprintf(stderr, "[%s] DBG setup: creating device point...\n", cfg_.name);
         tstc_handle_ = TST_USBCam_CREATE_DEVICE_POINT(dev_info_);
         if (!tstc_handle_) {
@@ -161,17 +161,16 @@ protected:
             }
         }
 
-        // ── 5. 启动 TSTC 流线程 ──
-        fprintf(stderr, "[%s] DBG setup: creating stream thread...\n", cfg_.name);
-        pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
-        fprintf(stderr, "[%s] DBG setup: stream thread created\n", cfg_.name);
-
-        // ★ 串行启动视频流 (避免多路并发 STREAM_STATUS 死锁)
-        //    给 stream 线程足够时间进入 Video_DEAL_WITH 事件循环
-        usleep(200000);  // 200ms
+        // ── 5. ★ 全局锁保护: stream线程 + STREAM_STATUS (整段原子化) ──
+        //    TSTC SDK 对同 VID/PID 设备的 DEAL_WITH_INIT/DEAL_WITH/STREAM_STATUS
+        //    必须完全串行, 否则内部状态冲突阻塞.
         fprintf(stderr, "[%s] DBG setup: acquiring stream_start_mutex...\n", cfg_.name);
         {
             std::lock_guard<std::mutex> lock(g_stream_start_mutex);
+            fprintf(stderr, "[%s] DBG setup: LOCKED, creating stream thread...\n", cfg_.name);
+            pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
+            usleep(200000);  // 200ms, 等 Video_DEAL_WITH 事件循环就绪
+
             fprintf(stderr, "[%s] DBG setup: calling STREAM_STATUS(1)...\n", cfg_.name);
             TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
             fprintf(stderr, "[%s] DBG setup: STREAM_STATUS(1) done\n", cfg_.name);
