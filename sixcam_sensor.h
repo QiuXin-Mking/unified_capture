@@ -215,21 +215,21 @@ protected:
             ch.y8_fp = fopen(path, "w");
         }
 
-        // ── 6. ★ 逐通道串行: stream线程 → STREAM_STATUS (完全串行, 避免SDK冲突) ──
+        // ── 6. ★ 逐通道串行: STREAM_STATUS 先, stream线程后 ──
+        //    必须先 STREAM_STATUS 再启 Video_DEAL_WITH 线程,
+        //    否则同 VID/PID 的 Video_DEAL_WITH 会互相冲突阻塞 STREAM_STATUS.
         for (int i = 0; i < 2; i++) {
             auto& ch = ch_[i];
-            // 启动 stream 线程
-            fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
-            pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
-            fprintf(stderr, "[%s] DBG: stream thread created\n", ch.name);
 
-            // 等事件循环就绪
-            usleep(100000);  // 100ms
-
-            // 启动视频流
+            // 启动视频流 (此时还没有 Video_DEAL_WITH 在跑)
             fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1)...\n", ch.name);
             TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
             fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
+
+            // 启动 stream 线程 (Video_DEAL_WITH 事件循环)
+            fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
+            pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
+            fprintf(stderr, "[%s] DBG: stream thread created\n", ch.name);
 
             ch.initialized = true;
             printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",

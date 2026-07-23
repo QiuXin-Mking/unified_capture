@@ -83,7 +83,7 @@ struct CamEntry {
 static CamEntry CAMS[] = {
     // JHH2 双目: H.265 + Y8
     {{"jhh2_left",  JHH2_VID, JHH2_PID, 0, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
-    {{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
+//{{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
     // JHH04 四目: 仅 Y8 (不给 SLAM 浪费 H.265 编码)
     // JHH04/JHH02 已移至 SixCamSensor 统一管理, 不再作为独立 VideoSensor
     // (见 sixcam_sensor.h 中的 SixCamSensor)

@@ -161,14 +161,9 @@ protected:
             }
         }
 
-        // ── 5. 启动 TSTC 流线程 ──
-        fprintf(stderr, "[%s] DBG setup: creating stream thread...\n", cfg_.name);
-        pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
-        fprintf(stderr, "[%s] DBG setup: stream thread created\n", cfg_.name);
-
-        // ★ 串行启动视频流 (避免多路并发 STREAM_STATUS 死锁)
-        //    TSTC SDK 的 STREAM_STATUS 不可重入, 必须加全局锁
-        usleep(50000);  // 50ms, 给 stream 线程时间进入 Video_DEAL_WITH 事件循环
+        // ── 5. ★ 先 STREAM_STATUS, 再启 stream 线程 ──
+        //    必须先 STREAM_STATUS 再 Video_DEAL_WITH,
+        //    否则同 VID/PID 多个 Video_DEAL_WITH 会冲突阻塞 STREAM_STATUS.
         fprintf(stderr, "[%s] DBG setup: acquiring stream_start_mutex...\n", cfg_.name);
         {
             std::lock_guard<std::mutex> lock(g_stream_start_mutex);
@@ -177,6 +172,10 @@ protected:
             fprintf(stderr, "[%s] DBG setup: STREAM_STATUS(1) done\n", cfg_.name);
         }
         fprintf(stderr, "[%s] DBG setup: stream_start_mutex released\n", cfg_.name);
+
+        fprintf(stderr, "[%s] DBG setup: creating stream thread...\n", cfg_.name);
+        pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
+        fprintf(stderr, "[%s] DBG setup: stream thread created\n", cfg_.name);
 
         printf("[%s] setup OK  (dev=%s, %dx%d@%dfps, H265=%c, Y8=%c)\n",
                cfg_.name, dev_info_.Device_Path, cfg_.width, cfg_.height, cfg_.fps,
