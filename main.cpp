@@ -41,6 +41,7 @@ extern "C" {
 #include "camera_config.h"
 #include "sensor.h"
 #include "video_sensor.h"
+#include "sixcam_sensor.h"
 #include "imu_sensor.h"
 #include "encoder_sensor.h"
 #include "vive_tracker.h"
@@ -84,10 +85,22 @@ static CamEntry CAMS[] = {
     {{"jhh2_left",  JHH2_VID, JHH2_PID, 0, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
     {{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
     // JHH04 四目: 仅 Y8 (不给 SLAM 浪费 H.265 编码)
-    {{"jhh04",      SIX_VID,  SIX_PID,  0, 3104,  480, 30,  4000000, 30, true,  ImuOrientation::VERTICAL_LEFT,  false, true},  true, nullptr},
-    // JHH02 双目 (六目模组内的 JHH2 通道, 使用 JHH2 VID/PID): H.265 + Y8
-    {{"jhh02",      JHH2_VID, JHH2_PID, 2, 3104,  480, 30,  4000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
+    // JHH04/JHH02 已移至 SixCamSensor 统一管理, 不再作为独立 VideoSensor
+    // (见 sixcam_sensor.h 中的 SixCamSensor)
 };
+
+// ============================================================
+// 六目模组: 一个物理主板, 两个通道 (JHH04四目 + JHH02双目)
+// 由 SixCamSensor 统一管理, 避免 TSTC SDK 同 VID/PID 流的死锁
+// ============================================================
+struct SixCamEntry {
+    bool enabled = true;
+    // JHH04: 1bcf:2d51, group_order=0  (四目, 仅Y8)
+    v4l2_dev_sys_data_t* jhh04_dev = nullptr;
+    // JHH02: 1bcf:2d50, group_order=2  (双目, H.265+Y8)
+    v4l2_dev_sys_data_t* jhh02_dev = nullptr;
+};
+static SixCamEntry g_sixcam;
 static const int N_CAMS = sizeof(CAMS) / sizeof(CAMS[0]);
 
 // AS5600 编码器配置
@@ -212,6 +225,46 @@ static int resolve_camera_devices() {
     for (int i = 0; i < N_CAMS; i++) {
         if (CAMS[i].enabled) active++;
     }
+
+    // ── 六目模组: 匹配 JHH04 (1bcf:2d51 group=0) + JHH02 (1bcf:2d50 group=2) ──
+    {
+        v4l2_dev_sys_data_t* six_devs = nullptr;
+        int six_n = TST_USBCam_DEVICE_FIND_ID(&six_devs, SIX_VID, SIX_PID);
+        if (six_n > 0) {
+            g_sixcam.jhh04_dev = &six_devs[0];  // group_order=0
+            g_sixcam.enabled = true;
+            printf("  %-12s → [%04x:%04x group:0] %s  3104x480@30  IMU=Y (SixCam)\n",
+                   "jhh04", SIX_VID, SIX_PID, g_sixcam.jhh04_dev->Device_Path);
+            active++;
+        } else {
+            g_sixcam.enabled = false;
+            fprintf(stderr, "WARN: sixcam JHH04 [%04x:%04x] not found → disabled\n",
+                    SIX_VID, SIX_PID);
+        }
+
+        // JHH02 使用 JHH2 VID/PID, group_order=2 (0=left, 1=right, 2=sixcam_jhh02)
+        VidPidGroup* jhh2_grp = nullptr;
+        for (auto& g : groups) {
+            if (g.vid == JHH2_VID && g.pid == JHH2_PID) { jhh2_grp = &g; break; }
+        }
+        if (!jhh2_grp) {
+            VidPidGroup g;
+            g.vid = JHH2_VID; g.pid = JHH2_PID;
+            g.count = TST_USBCam_DEVICE_FIND_ID(&g.devs, JHH2_VID, JHH2_PID);
+            groups.push_back(g);
+            jhh2_grp = &groups.back();
+        }
+        if (g_sixcam.enabled && jhh2_grp->count >= 3) {
+            g_sixcam.jhh02_dev = &jhh2_grp->devs[2];  // group_order=2
+            printf("  %-12s → [%04x:%04x group:2] %s  3104x480@30  IMU=Y (SixCam)\n",
+                   "jhh02", JHH2_VID, JHH2_PID, g_sixcam.jhh02_dev->Device_Path);
+        } else if (g_sixcam.enabled) {
+            fprintf(stderr, "WARN: sixcam JHH02 [%04x:%04x group_order=2] not found\n",
+                    JHH2_VID, JHH2_PID);
+            g_sixcam.jhh02_dev = nullptr;
+        }
+    }
+
     return active;
 }
 
@@ -226,6 +279,13 @@ static std::string make_session_dir(const std::string& prefix, int num) {
     for (int i = 0; i < N_CAMS; i++) {
         if (!CAMS[i].enabled) continue;
         snprintf(buf, sizeof(buf), "%s/%s", dir.c_str(), CAMS[i].cfg.name);
+        mkdir_p(buf, 0755);
+    }
+    // 六目模组目录
+    if (g_sixcam.enabled) {
+        snprintf(buf, sizeof(buf), "%s/jhh04", dir.c_str());
+        mkdir_p(buf, 0755);
+        snprintf(buf, sizeof(buf), "%s/jhh02", dir.c_str());
         mkdir_p(buf, 0755);
     }
     return dir;
@@ -255,7 +315,7 @@ static void run_session(const std::string& ses_dir, int session_num,
 
     std::vector<Sensor*> sensors;
 
-    // ---- 创建 VideoSensor + ImuSensor ----
+    // ---- 创建 VideoSensor + ImuSensor (独立 JHH2) ----
     for (int i = 0; i < N_CAMS; i++) {
         if (!CAMS[i].enabled) continue;
 
@@ -269,6 +329,30 @@ static void run_session(const std::string& ses_dir, int session_num,
                 std::string(cam.cfg.name), ses_dir,
                 vs->imu_queue(), session_num,
                 cam.cfg.imu_orientation, g_session_running));
+        }
+    }
+
+    // ---- 六目模组 (SixCamSensor: JHH04 + JHH02) ----
+    if (g_sixcam.enabled && g_sixcam.jhh04_dev && g_sixcam.jhh02_dev) {
+        // 定义六目模组两个通道的配置
+        CameraConfig jhh04_cfg{"jhh04", SIX_VID,  SIX_PID,  0, 3104, 480, 30, 4000000, 30,
+                                true, ImuOrientation::VERTICAL_LEFT, false, true};
+        CameraConfig jhh02_cfg{"jhh02", JHH2_VID, JHH2_PID, 2, 3104, 480, 30, 4000000, 30,
+                                true, ImuOrientation::HORIZONTAL_TOP, true, true};
+
+        auto* sc = new SixCamSensor(jhh04_cfg, jhh02_cfg,
+                                     *g_sixcam.jhh04_dev, *g_sixcam.jhh02_dev,
+                                     ses_dir, session_num, g_session_running);
+        sensors.push_back(sc);
+
+        // 六目模组的两个 IMU 传感器
+        if (use_imu) {
+            sensors.push_back(new ImuSensor("jhh04", ses_dir,
+                sc->imu_queue_jhh04(), session_num,
+                ImuOrientation::VERTICAL_LEFT, g_session_running));
+            sensors.push_back(new ImuSensor("jhh02", ses_dir,
+                sc->imu_queue_jhh02(), session_num,
+                ImuOrientation::HORIZONTAL_TOP, g_session_running));
         }
     }
 
