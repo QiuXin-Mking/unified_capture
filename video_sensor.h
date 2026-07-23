@@ -88,7 +88,6 @@ protected:
         }
         fprintf(stderr, "[%s] DBG setup: dev_fd=%d\n", cfg_.name, dev_fd_);
 
-        fprintf(stderr, "[%s] DBG setup: Video_DEAL_WITH_INIT (will do under lock)\n", cfg_.name);
 
         // ── 2. MPP 编码器 ──
         if (cfg_.output_h265) {
@@ -156,11 +155,9 @@ protected:
             }
         }
 
-        // ── 5. ★ 全局锁保护: stream线程 + STREAM_STATUS (整段原子化) ──
-        //    TSTC SDK 对同 VID/PID 设备的 DEAL_WITH_INIT/DEAL_WITH/STREAM_STATUS
-        //    必须完全串行, 否则内部状态冲突阻塞.
         // ★ 整段上锁: DEAL_WITH_INIT → stream线程 → STREAM_STATUS
         //    同 VID/PID 设备必须完全串行, 否则 SDK 内部状态冲突阻塞
+        // ★ DEAL_WITH_INIT → stream → STREAM_STATUS (提前上锁, 抢在六目前面)
         fprintf(stderr, "[%s] DBG setup: acquiring stream_start_mutex...\n", cfg_.name);
         {
             std::lock_guard<std::mutex> lock(g_stream_start_mutex);
@@ -175,7 +172,7 @@ protected:
 
             fprintf(stderr, "[%s] DBG setup: creating stream thread...\n", cfg_.name);
             pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
-            usleep(200000);  // 等 Video_DEAL_WITH 事件循环就绪
+            usleep(200000);
 
             fprintf(stderr, "[%s] DBG setup: calling STREAM_STATUS(1)...\n", cfg_.name);
             TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
