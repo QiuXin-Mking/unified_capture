@@ -215,22 +215,22 @@ protected:
             ch.y8_fp = fopen(path, "w");
         }
 
-        // ── 6. 启动 stream 线程 (TSTC SDK 事件循环) ──
+        // ── 6. ★ 逐通道串行: stream线程 → STREAM_STATUS (完全串行, 避免SDK冲突) ──
         for (int i = 0; i < 2; i++) {
             auto& ch = ch_[i];
+            // 启动 stream 线程
             fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
             pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
             fprintf(stderr, "[%s] DBG: stream thread created\n", ch.name);
-        }
 
-        // ── 7. ★ 串行启动流 (同线程, 避免 SDK 死锁) ──
-        //    等 stream 线程进入 Video_DEAL_WITH 事件循环
-        usleep(100000);  // 100ms
-        for (int i = 0; i < 2; i++) {
-            auto& ch = ch_[i];
+            // 等事件循环就绪
+            usleep(100000);  // 100ms
+
+            // 启动视频流
             fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1)...\n", ch.name);
             TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
             fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
+
             ch.initialized = true;
             printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
                    ch.name, ch.width, ch.height, ch.fps,
