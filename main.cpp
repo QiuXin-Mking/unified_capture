@@ -85,8 +85,8 @@ static CamEntry CAMS[] = {
     {{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
     // JHH04 四目: 仅 Y8 (不给 SLAM 浪费 H.265 编码)
     {{"jhh04",      SIX_VID,  SIX_PID,  0, 3104,  480, 30,  4000000, 30, true,  ImuOrientation::VERTICAL_LEFT,  false, true},  true, nullptr},
-    // JHH02 双目: H.265 + Y8
-    {{"jhh02",      SIX_VID,  SIX_PID,  1, 3104,  480, 30,  4000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
+    // JHH02 双目 (六目模组内的 JHH2 通道, 使用 JHH2 VID/PID): H.265 + Y8
+    {{"jhh02",      JHH2_VID, JHH2_PID, 2, 3104,  480, 30,  4000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
 };
 static const int N_CAMS = sizeof(CAMS) / sizeof(CAMS[0]);
 

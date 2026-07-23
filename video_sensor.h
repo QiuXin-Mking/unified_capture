@@ -58,6 +58,7 @@ public:
 protected:
     void setup() override {
         char path[256];
+        fprintf(stderr, "[%s] DBG setup: ENTER\n", cfg_.name);
 
         // ── 创建输出目录 ──
         snprintf(path, sizeof(path), "%s/%s", session_dir_.c_str(), cfg_.name);
@@ -65,29 +66,37 @@ protected:
         mkdir_p(out_dir_.c_str(), 0755);
 
         // ── 1. TSTC SDK 初始化 ──
+        fprintf(stderr, "[%s] DBG setup: creating device point...\n", cfg_.name);
         tstc_handle_ = TST_USBCam_CREATE_DEVICE_POINT(dev_info_);
         if (!tstc_handle_) {
             fprintf(stderr, "[%s] TST_USBCam_CREATE_DEVICE_POINT failed\n", cfg_.name);
             return;
         }
+        fprintf(stderr, "[%s] DBG setup: handle=%p\n", cfg_.name, tstc_handle_);
 
+        fprintf(stderr, "[%s] DBG setup: opening %s...\n", cfg_.name, dev_info_.Device_Path);
         dev_fd_ = open(dev_info_.Device_Path, O_RDWR | O_NONBLOCK);
         if (dev_fd_ < 0) {
-            fprintf(stderr, "[%s] open %s failed\n", cfg_.name, dev_info_.Device_Path);
+            fprintf(stderr, "[%s] open %s failed: %s\n", cfg_.name, dev_info_.Device_Path, strerror(errno));
             return;
         }
+        fprintf(stderr, "[%s] DBG setup: dev_fd=%d\n", cfg_.name, dev_fd_);
 
+        fprintf(stderr, "[%s] DBG setup: Video_DEAL_WITH_INIT...\n", cfg_.name);
         if (TST_USBCam_Video_DEAL_WITH_INIT(tstc_handle_, dev_fd_) != 0) {
             fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", cfg_.name);
             return;
         }
+        fprintf(stderr, "[%s] DBG setup: Video_DEAL_WITH_INIT OK\n", cfg_.name);
 
         // ── 2. MPP 编码器 ──
         if (cfg_.output_h265) {
+            fprintf(stderr, "[%s] DBG setup: MPP init %dx%d...\n", cfg_.name, cfg_.width, cfg_.height);
             if (!mpp_.init(cfg_.width, cfg_.height, cfg_.bitrate, cfg_.fps, cfg_.gop)) {
                 fprintf(stderr, "[%s] MPP init failed\n", cfg_.name);
                 return;
             }
+            fprintf(stderr, "[%s] DBG setup: MPP init OK\n", cfg_.name);
         }
 
         // ── 3. FIFO + FFmpeg MKV 封装 ──
@@ -99,6 +108,7 @@ protected:
                 perror("mkfifo");
                 return;
             }
+            fprintf(stderr, "[%s] DBG setup: fifo=%s created\n", cfg_.name, fifo_path_.c_str());
 
             ffmpeg_pid_ = fork();
             if (ffmpeg_pid_ < 0) {
@@ -120,14 +130,17 @@ protected:
                 perror("exec ffmpeg");
                 _exit(1);
             }
+            fprintf(stderr, "[%s] DBG setup: ffmpeg pid=%d\n", cfg_.name, ffmpeg_pid_);
 
             // 打开 FIFO 写入端 (阻塞直到 ffmpeg 打开读端)
+            fprintf(stderr, "[%s] DBG setup: opening fifo write end (may block)...\n", cfg_.name);
             fifo_fd_ = open(fifo_path_.c_str(), O_WRONLY);
             if (fifo_fd_ < 0) {
                 perror("open fifo for write");
                 return;
             }
             fifo_fp_ = fdopen(fifo_fd_, "w");
+            fprintf(stderr, "[%s] DBG setup: fifo write end opened\n", cfg_.name);
         }
 
         // ── 4. Y8 原始灰度文件 ──
@@ -137,15 +150,27 @@ protected:
             y8_fp_ = fopen(path, "w");
             if (!y8_fp_) {
                 fprintf(stderr, "[%s] cannot create Y8 file %s\n", cfg_.name, path);
+            } else {
+                fprintf(stderr, "[%s] DBG setup: Y8 file %s opened\n", cfg_.name, path);
             }
         }
 
         // ── 5. 启动 TSTC 流线程 ──
+        fprintf(stderr, "[%s] DBG setup: creating stream thread...\n", cfg_.name);
         pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
+        fprintf(stderr, "[%s] DBG setup: stream thread created\n", cfg_.name);
+
+        // ★ 串行启动视频流 (避免多路并发 STREAM_STATUS 死锁)
+        //    stream 线程需要一点时间进入 Video_DEAL_WITH 事件循环
+        usleep(50000);  // 50ms
+        fprintf(stderr, "[%s] DBG setup: calling STREAM_STATUS(1)...\n", cfg_.name);
+        TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
+        fprintf(stderr, "[%s] DBG setup: STREAM_STATUS(1) done\n", cfg_.name);
 
         printf("[%s] setup OK  (dev=%s, %dx%d@%dfps, H265=%c, Y8=%c)\n",
                cfg_.name, dev_info_.Device_Path, cfg_.width, cfg_.height, cfg_.fps,
                cfg_.output_h265 ? 'Y' : 'N', cfg_.output_y8 ? 'Y' : 'N');
+        fprintf(stderr, "[%s] DBG setup: EXIT (initialized=true)\n", cfg_.name);
         initialized_ = true;
     }
 
@@ -155,21 +180,34 @@ protected:
             return;
         }
 
-        // ★ 启动视频流 (所有线程在 barrier 之后同时到达这里)
-        TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
+        fprintf(stderr, "[%s] DBG collect: ENTER (stream already started in setup)\n", cfg_.name);
 
         tjhandle tj = tjInitDecompress();
         uint64_t frame_idx = 0;
         size_t total_h265 = 0;
+        int empty_polls = 0;
 
         uint32_t nv12_size = cfg_.width * cfg_.height * 3 / 2;
         uint8_t* nv12 = new uint8_t[nv12_size];
 
+        fprintf(stderr, "[%s] DBG collect: entering frame loop (running=%d)\n",
+                cfg_.name, (int)running_);
+
         while (running_) {
             Frame_Buffer_Data* fb = TST_USBCam_GET_FRAME_BUFF(tstc_handle_, 0);
             if (!fb) {
+                empty_polls++;
+                if (empty_polls == 1) {
+                    fprintf(stderr, "[%s] DBG collect: GET_FRAME_BUFF returned NULL (first time)\n", cfg_.name);
+                }
                 usleep(1000);
                 continue;
+            }
+
+            if (empty_polls > 0) {
+                fprintf(stderr, "[%s] DBG collect: got first frame after %d empty polls\n",
+                        cfg_.name, empty_polls);
+                empty_polls = 0;
             }
 
             uint64_t ts_us = elapsed_us();
@@ -180,6 +218,10 @@ protected:
             int w = 0, h = 0, subsamp = 0;
             if (tjDecompressHeader2(tj, mjpg, mjpg_len, &w, &h, &subsamp) != 0 ||
                 w <= 0 || w > 8000) {
+                if (frame_idx == 0) {
+                    fprintf(stderr, "[%s] DBG collect: tjDecompressHeader2 failed, len=%zu\n",
+                            cfg_.name, mjpg_len);
+                }
                 TST_USBCam_SAVE_FRAME_RES(tstc_handle_, fb);
                 continue;
             }
@@ -208,56 +250,90 @@ protected:
                 if (cfg_.output_y8 && y8_fp_) {
                     fwrite(nv12, 1, cfg_.width * cfg_.height, y8_fp_);
                 }
+            } else if (frame_idx == 0) {
+                fprintf(stderr, "[%s] DBG collect: tjDecompress2 failed, ret=%d, w=%d h=%d len=%zu\n",
+                        cfg_.name, dec_ret, w, h, mjpg_len);
             }
 
             delete[] bgr;
             TST_USBCam_SAVE_FRAME_RES(tstc_handle_, fb);
             frame_idx++;
+
+            if (frame_idx % 30 == 0) {
+                fprintf(stderr, "[%s] DBG collect: frame=%llu, last_mjpg_len=%zu, h265_total=%zu\n",
+                        cfg_.name, (unsigned long long)frame_idx, mjpg_len, total_h265);
+            }
         }
 
+        fprintf(stderr, "[%s] DBG collect: loop exit (frame_idx=%llu, empty_polls=%d)\n",
+                cfg_.name, (unsigned long long)frame_idx, empty_polls);
+
         // 停止流
+        fprintf(stderr, "[%s] DBG collect: stopping TSTC stream...\n", cfg_.name);
         TST_USBCam_EVENT_LoopMode(tstc_handle_, 0);
 
         // Flush MPP
         if (cfg_.output_h265) {
             printf("[%s] flushing encoder (%zu frames, %.1f MB H.265)...\n",
                    cfg_.name, frame_idx, total_h265 / 1048576.0);
+            fprintf(stderr, "[%s] DBG collect: MPP flush...\n", cfg_.name);
             mpp_.flush(fifo_fp_);
+            fprintf(stderr, "[%s] DBG collect: MPP flush done\n", cfg_.name);
         } else {
             printf("[%s] stopped (%zu frames)\n", cfg_.name, frame_idx);
         }
 
         delete[] nv12;
         tjDestroy(tj);
+        fprintf(stderr, "[%s] DBG collect: EXIT\n", cfg_.name);
     }
 
     void teardown() override {
+        fprintf(stderr, "[%s] DBG teardown: ENTER\n", cfg_.name);
+
         if (cfg_.output_h265) {
-            if (fifo_fp_) { fclose(fifo_fp_); fifo_fp_ = nullptr; fifo_fd_ = -1; }
+            if (fifo_fp_) {
+                fprintf(stderr, "[%s] DBG teardown: closing fifo_fp...\n", cfg_.name);
+                fclose(fifo_fp_); fifo_fp_ = nullptr; fifo_fd_ = -1;
+                fprintf(stderr, "[%s] DBG teardown: fifo_fp closed\n", cfg_.name);
+            }
 
             // 等待 ffmpeg 退出 (FIFO 读端收到 EOF)
             if (ffmpeg_pid_ > 0) {
+                fprintf(stderr, "[%s] DBG teardown: waiting for ffmpeg pid=%d...\n",
+                        cfg_.name, ffmpeg_pid_);
                 int status;
                 waitpid(ffmpeg_pid_, &status, 0);
                 printf("[%s] ffmpeg exited (%d)\n", cfg_.name, WEXITSTATUS(status));
+                fprintf(stderr, "[%s] DBG teardown: ffmpeg wait done\n", cfg_.name);
             }
         }
 
         // 等待 TSTC 流线程
         if (stream_thread_) {
+            fprintf(stderr, "[%s] DBG teardown: joining stream thread...\n", cfg_.name);
             pthread_join(stream_thread_, nullptr);
+            fprintf(stderr, "[%s] DBG teardown: stream thread joined\n", cfg_.name);
         }
 
         // 清理 MPP
-        if (cfg_.output_h265) { mpp_.destroy(); }
+        if (cfg_.output_h265) {
+            fprintf(stderr, "[%s] DBG teardown: destroying MPP...\n", cfg_.name);
+            mpp_.destroy();
+            fprintf(stderr, "[%s] DBG teardown: MPP destroyed\n", cfg_.name);
+        }
 
         // 清理 FIFO
-        if (cfg_.output_h265) { unlink(fifo_path_.c_str()); }
+        if (cfg_.output_h265) {
+            fprintf(stderr, "[%s] DBG teardown: unlinking fifo...\n", cfg_.name);
+            unlink(fifo_path_.c_str());
+        }
 
         // 关闭 Y8 文件
         if (y8_fp_) { fclose(y8_fp_); y8_fp_ = nullptr; }
 
         printf("[%s] teardown OK\n", cfg_.name);
+        fprintf(stderr, "[%s] DBG teardown: EXIT\n", cfg_.name);
     }
 
     const CameraConfig& config() const { return cfg_; }
