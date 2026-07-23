@@ -38,6 +38,12 @@
 #include "mpp_encoder.h"
 #include "camera_config.h"
 
+// ============================================================
+// 全局互斥锁: TSTC SDK 的 STREAM_STATUS 不支持多路并发调用,
+// 必须串行化 (否则在多个 JHH2 设备上同时调用会死锁)
+// ============================================================
+static std::mutex g_stream_start_mutex;
+
 class VideoSensor : public Sensor {
 public:
     VideoSensor(const CameraConfig& cfg,
@@ -161,11 +167,16 @@ protected:
         fprintf(stderr, "[%s] DBG setup: stream thread created\n", cfg_.name);
 
         // ★ 串行启动视频流 (避免多路并发 STREAM_STATUS 死锁)
-        //    stream 线程需要一点时间进入 Video_DEAL_WITH 事件循环
-        usleep(50000);  // 50ms
-        fprintf(stderr, "[%s] DBG setup: calling STREAM_STATUS(1)...\n", cfg_.name);
-        TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
-        fprintf(stderr, "[%s] DBG setup: STREAM_STATUS(1) done\n", cfg_.name);
+        //    TSTC SDK 的 STREAM_STATUS 不可重入, 必须加全局锁
+        usleep(50000);  // 50ms, 给 stream 线程时间进入 Video_DEAL_WITH 事件循环
+        fprintf(stderr, "[%s] DBG setup: acquiring stream_start_mutex...\n", cfg_.name);
+        {
+            std::lock_guard<std::mutex> lock(g_stream_start_mutex);
+            fprintf(stderr, "[%s] DBG setup: calling STREAM_STATUS(1)...\n", cfg_.name);
+            TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
+            fprintf(stderr, "[%s] DBG setup: STREAM_STATUS(1) done\n", cfg_.name);
+        }
+        fprintf(stderr, "[%s] DBG setup: stream_start_mutex released\n", cfg_.name);
 
         printf("[%s] setup OK  (dev=%s, %dx%d@%dfps, H265=%c, Y8=%c)\n",
                cfg_.name, dev_info_.Device_Path, cfg_.width, cfg_.height, cfg_.fps,
