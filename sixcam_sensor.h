@@ -210,27 +210,7 @@ protected:
             ch.y8_fp = fopen(path, "w");
         }
 
-        // ── 6. JHH04: 不参与锁 (VID/PID=1bcf:2d51 独占) ──
-        {
-            auto& ch = ch_[0];
-            fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT...\n", ch.name);
-            if (TST_USBCam_Video_DEAL_WITH_INIT(ch.tstc_handle, ch.dev_fd) != 0) {
-                fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", ch.name);
-                return;
-            }
-            fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
-            pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
-            usleep(200000);
-            fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1)...\n", ch.name);
-            TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
-            fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
-            ch.initialized = true;
-            printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
-                   ch.name, ch.width, ch.height, ch.fps,
-                   ch.output_h265 ? 'Y' : 'N', ch.output_y8 ? 'Y' : 'N');
-        }
-
-        // ── 7. JHH02: 必须上锁 (VID/PID=1bcf:2d50, 与独立JHH2冲突) ──
+        // ── 6. JHH02: 必须上锁 (VID/PID=1bcf:2d50, 与独立JHH2冲突) ──
         {
             auto& ch = ch_[1];
             fprintf(stderr, "[%s] DBG: acquiring stream_start_mutex...\n", ch.name);
@@ -256,6 +236,26 @@ protected:
                    ch.output_h265 ? 'Y' : 'N', ch.output_y8 ? 'Y' : 'N');
         }
     }
+
+        // ── 7. JHH04: 不参与锁 (VID/PID=1bcf:2d51 独占) ──
+        {
+            auto& ch = ch_[0];
+            fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT...\n", ch.name);
+            if (TST_USBCam_Video_DEAL_WITH_INIT(ch.tstc_handle, ch.dev_fd) != 0) {
+                fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", ch.name);
+                return;
+            }
+            fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
+            pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
+            usleep(200000);
+            fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1)...\n", ch.name);
+            TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
+            fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
+            ch.initialized = true;
+            printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
+                   ch.name, ch.width, ch.height, ch.fps,
+                   ch.output_h265 ? 'Y' : 'N', ch.output_y8 ? 'Y' : 'N');
+        }
 
     void collect() override {
         // 为两个通道各自启动一个采集线程
