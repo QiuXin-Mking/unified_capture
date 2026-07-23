@@ -266,7 +266,7 @@ protected:
             }
 
             if (ch.output_h265) {
-                if (ch.fifo_fp_) { fclose(ch.fifo_fp_); ch.fifo_fp_ = nullptr; }
+                if (ch.fifo_fp) { fclose(ch.fifo_fp); ch.fifo_fp = nullptr; }
 
                 if (ch.ffmpeg_pid > 0) {
                     int status;
@@ -276,7 +276,7 @@ protected:
             }
 
             if (ch.output_h265) { unlink(ch.fifo_path.c_str()); }
-            if (ch.y8_fp_) { fclose(ch.y8_fp_); ch.y8_fp_ = nullptr; }
+            if (ch.y8_fp) { fclose(ch.y8_fp); ch.y8_fp = nullptr; }
 
             // 清理 SDK
             TST_USBCam_Video_DEAL_WITH_UNINIT(ch.tstc_handle);
