@@ -135,47 +135,23 @@ protected:
             mkdir_p(path, 0755);
         }
 
-        // ── 2. 初始化两个通道的 TSTC 设备 (CREATE + open + DEAL_WITH_INIT) ──
-        //    JHH04 不需要锁 (VID/PID=1bcf:2d51 独占)
-        //    JHH02 在后面的锁段中初始化 (VID/PID=1bcf:2d50 与独立JHH2冲突)
+        // ── 2. 两个通道只做 CREATE + open (轻量, 不触发固件) ──
+        //    DEAL_WITH_INIT 必须等 JHH2 独立相机完成后再做, 否则 IMU 全零
         v4l2_dev_sys_data_t* devs[2] = { &jhh04_dev_, &jhh02_dev_ };
-
-        // JHH04: 无锁初始化
-        {
-            auto& ch = ch_[0];
+        for (int i = 0; i < 2; i++) {
+            auto& ch = ch_[i];
             fprintf(stderr, "[%s] DBG: creating device point...\n", ch.name);
-            ch.tstc_handle = TST_USBCam_CREATE_DEVICE_POINT(*devs[0]);
+            ch.tstc_handle = TST_USBCam_CREATE_DEVICE_POINT(*devs[i]);
             if (!ch.tstc_handle) {
                 fprintf(stderr, "[%s] CREATE_DEVICE_POINT failed\n", ch.name);
                 return;
             }
-            ch.dev_fd = open(devs[0]->Device_Path, O_RDWR | O_NONBLOCK);
+            ch.dev_fd = open(devs[i]->Device_Path, O_RDWR | O_NONBLOCK);
             if (ch.dev_fd < 0) {
-                fprintf(stderr, "[%s] open %s failed\n", ch.name, devs[0]->Device_Path);
+                fprintf(stderr, "[%s] open %s failed\n", ch.name, devs[i]->Device_Path);
                 return;
             }
-            if (TST_USBCam_Video_DEAL_WITH_INIT(ch.tstc_handle, ch.dev_fd) != 0) {
-                fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", ch.name);
-                return;
-            }
-            fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT OK\n", ch.name);
-        }
-
-        // JHH02: CREATE + open 先做 (轻量), DEAL_WITH_INIT 在锁内
-        {
-            auto& ch = ch_[1];
-            fprintf(stderr, "[%s] DBG: creating device point...\n", ch.name);
-            ch.tstc_handle = TST_USBCam_CREATE_DEVICE_POINT(*devs[1]);
-            if (!ch.tstc_handle) {
-                fprintf(stderr, "[%s] CREATE_DEVICE_POINT failed\n", ch.name);
-                return;
-            }
-            ch.dev_fd = open(devs[1]->Device_Path, O_RDWR | O_NONBLOCK);
-            if (ch.dev_fd < 0) {
-                fprintf(stderr, "[%s] open %s failed\n", ch.name, devs[1]->Device_Path);
-                return;
-            }
-            // DEAL_WITH_INIT 延迟到锁内 (步骤 7)
+            // DEAL_WITH_INIT 延迟到锁内
         }
 
         // ── 3. MPP 编码器 (仅 jhh02 需要) ──
@@ -234,9 +210,8 @@ protected:
             ch.y8_fp = fopen(path, "w");
         }
 
-        // ── 6. ★ 六目模组全局锁: JHH04 → JHH02 串行 ──
-        //    必须等所有独立 JHH2 初始化完再开六目 (否则 IMU 全零)
-        //    JHH04 也纳入锁, 保证时序: JHH2独立 → JHH04 → JHH02
+        // ── 6. ★ 六目模组全局锁: 等独立JHH2完成 → JHH04 → JHH02 ──
+        //    DEAL_WITH_INIT 必须在锁内, 保证 JHH2独立先于 JHH04 启动
         fprintf(stderr, "[sixcam] DBG: acquiring stream_start_mutex...\n");
         {
             std::lock_guard<std::mutex> lock(g_stream_start_mutex);
@@ -245,16 +220,15 @@ protected:
             for (int i = 0; i < 2; i++) {
                 auto& ch = ch_[i];
 
-                // JHH02: DEAL_WITH_INIT 在锁内补做 (之前只做了 CREATE+open)
-                if (i == 1) {
-                    fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT...\n", ch.name);
-                    if (TST_USBCam_Video_DEAL_WITH_INIT(ch.tstc_handle, ch.dev_fd) != 0) {
-                        fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", ch.name);
-                        return;
-                    }
-                    fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT OK\n", ch.name);
+                // DEAL_WITH_INIT (之前只做了 CREATE+open)
+                fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT...\n", ch.name);
+                if (TST_USBCam_Video_DEAL_WITH_INIT(ch.tstc_handle, ch.dev_fd) != 0) {
+                    fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", ch.name);
+                    return;
                 }
+                fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT OK\n", ch.name);
 
+                // stream 线程 + STREAM_STATUS
                 fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
                 pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
                 usleep(200000);
