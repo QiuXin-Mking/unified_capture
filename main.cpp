@@ -52,6 +52,7 @@ extern "C" {
 struct timespec g_t0;
 static std::atomic<bool> g_running{true};
 static std::atomic<bool> g_session_running{false};
+std::atomic<int> g_jhh2_remaining{0};  // jhh04 等待此计数器归零后才启流
 
 static void sig_handler(int) {
     g_running = false;
@@ -82,8 +83,8 @@ struct CamEntry {
 // CameraConfig: name, vid, pid, group_order, width, height, fps, bitrate, gop, has_imu, imu_orientation, output_h265, output_y8
 static CamEntry CAMS[] = {
     // JHH2 双目: H.265 + Y8
-//{{"jhh2_left",  JHH2_VID, JHH2_PID, 0, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
-//{{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
+{{"jhh2_left",  JHH2_VID, JHH2_PID, 0, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
+{{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
     // JHH04 四目: 仅 Y8 (不给 SLAM 浪费 H.265 编码)
     // JHH04/JHH02 已移至 SixCamSensor 统一管理, 不再作为独立 VideoSensor
     // (见 sixcam_sensor.h 中的 SixCamSensor)
@@ -314,6 +315,16 @@ static void run_session(const std::string& ses_dir, int session_num,
     clock_gettime(CLOCK_MONOTONIC, &g_t0);
 
     std::vector<Sensor*> sensors;
+
+    // ★ 统计所有 JHH2 设备数量, jhh04 必须等它们全部启流完毕
+    g_jhh2_remaining = 0;
+    for (int i = 0; i < N_CAMS; i++) {
+        if (CAMS[i].enabled && CAMS[i].cfg.vid == JHH2_VID && CAMS[i].cfg.pid == JHH2_PID)
+            g_jhh2_remaining++;
+    }
+    if (g_sixcam.enabled && g_sixcam.jhh02_dev)
+        g_jhh2_remaining++;  // 六目的 jhh02
+    fprintf(stderr, "[main] JHH2 devices to init before jhh04: %d\n", (int)g_jhh2_remaining);
 
     // ---- 创建 VideoSensor + ImuSensor (独立 JHH2) ----
     for (int i = 0; i < N_CAMS; i++) {

@@ -37,6 +37,7 @@
 
 // 复用 VideoSensor 的全局互斥锁 (定义在 video_sensor.h)
 extern std::mutex g_stream_start_mutex;
+extern std::atomic<int> g_jhh2_remaining;  // jhh04 等待此计数器归零
 
 // ============================================================
 // 单个通道的内部状态
@@ -210,27 +211,9 @@ protected:
             ch.y8_fp = fopen(path, "w");
         }
 
-        // ── 6. JHH04: 不参与锁 (VID/PID=1bcf:2d51 独占) ──
-        {
-            auto& ch = ch_[0];
-            fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT...\n", ch.name);
-            if (TST_USBCam_Video_DEAL_WITH_INIT(ch.tstc_handle, ch.dev_fd) != 0) {
-                fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", ch.name);
-                return;
-            }
-            fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
-            pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
-            usleep(200000);
-            fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1)...\n", ch.name);
-            TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
-            fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
-            ch.initialized = true;
-            printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
-                   ch.name, ch.width, ch.height, ch.fps,
-                   ch.output_h265 ? 'Y' : 'N', ch.output_y8 ? 'Y' : 'N');
-        }
-
-        // ── 7. JHH02: 必须上锁 (VID/PID=1bcf:2d50, 与独立JHH2冲突) ──
+        // ── 6. JHH02 先启流 (VID/PID=1bcf:2d50)
+        //    ★ 必须先开 JHH2, 再开 JHH04, 否则 JHH04 IMU 全零
+        //    上锁防止与独立 JHH2 左/右双目冲突
         {
             auto& ch = ch_[1];
             fprintf(stderr, "[%s] DBG: acquiring stream_start_mutex...\n", ch.name);
@@ -245,9 +228,43 @@ protected:
                 fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
                 pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
                 usleep(200000);
-                fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(0) non-blocking...\n", ch.name);
-                TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 0);
-                fprintf(stderr, "[%s] DBG: STREAM_STATUS(0) done (non-blocking, will poll)\n", ch.name);
+                fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1) blocking...\n", ch.name);
+                TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
+                fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
+                int rem = --g_jhh2_remaining;
+                fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", ch.name, rem);
+            }
+            fprintf(stderr, "[%s] DBG: stream_start_mutex released\n", ch.name);
+            ch.initialized = true;
+            printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
+                   ch.name, ch.width, ch.height, ch.fps,
+                   ch.output_h265 ? 'Y' : 'N', ch.output_y8 ? 'Y' : 'N');
+        }
+
+        // ── 7. JHH04 后启流 (VID/PID=1bcf:2d51)
+        //    等待所有 JHH2 设备完成 STREAM_STATUS 后再启流
+        {
+            auto& ch = ch_[0];
+            fprintf(stderr, "[%s] DBG: waiting for %d JHH2 devices...\n",
+                    ch.name, (int)g_jhh2_remaining);
+            while (g_jhh2_remaining > 0) {
+                usleep(20000);
+            }
+            fprintf(stderr, "[%s] DBG: all JHH2 done, acquiring stream_start_mutex...\n", ch.name);
+            {
+                std::lock_guard<std::mutex> lock(g_stream_start_mutex);
+                fprintf(stderr, "[%s] DBG: LOCKED\n", ch.name);
+                fprintf(stderr, "[%s] DBG: Video_DEAL_WITH_INIT...\n", ch.name);
+                if (TST_USBCam_Video_DEAL_WITH_INIT(ch.tstc_handle, ch.dev_fd) != 0) {
+                    fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", ch.name);
+                    return;
+                }
+                fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
+                pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
+                usleep(200000);
+                fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1) blocking...\n", ch.name);
+                TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
+                fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
             }
             fprintf(stderr, "[%s] DBG: stream_start_mutex released\n", ch.name);
             ch.initialized = true;

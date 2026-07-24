@@ -43,6 +43,7 @@
 // 必须串行化 (否则在多个 JHH2 设备上同时调用会死锁)
 // ============================================================
 static std::mutex g_stream_start_mutex;
+extern std::atomic<int> g_jhh2_remaining;  // jhh04 等待此计数器归零
 
 class VideoSensor : public Sensor {
 public:
@@ -177,6 +178,10 @@ protected:
             fprintf(stderr, "[%s] DBG setup: calling STREAM_STATUS(1)...\n", cfg_.name);
             TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
             fprintf(stderr, "[%s] DBG setup: STREAM_STATUS(1) done\n", cfg_.name);
+            if (cfg_.vid == 0x1bcf && cfg_.pid == 0x2d50) {
+                int rem = --g_jhh2_remaining;
+                fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", cfg_.name, rem);
+            }
         }
         fprintf(stderr, "[%s] DBG setup: stream_start_mutex released\n", cfg_.name);
 
