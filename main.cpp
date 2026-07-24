@@ -347,7 +347,7 @@ static void run_session(const std::string& ses_dir, int session_num,
     if (g_sixcam.enabled && g_sixcam.jhh04_dev && g_sixcam.jhh02_dev) {
         // 定义六目模组两个通道的配置
         CameraConfig jhh04_cfg{"jhh04", SIX_VID,  SIX_PID,  0, 3104, 480, 30, 4000000, 30,
-                                true, ImuOrientation::VERTICAL_LEFT, false, true};
+                                true, ImuOrientation::HORIZONTAL_TOP, false, true};
         CameraConfig jhh02_cfg{"jhh02", JHH2_VID, JHH2_PID, 2, 3104, 480, 30, 4000000, 30,
                                 true, ImuOrientation::HORIZONTAL_TOP, true, true};
 
@@ -360,7 +360,7 @@ static void run_session(const std::string& ses_dir, int session_num,
         if (use_imu) {
             sensors.push_back(new ImuSensor("jhh04", ses_dir,
                 sc->imu_queue_jhh04(), session_num,
-                ImuOrientation::VERTICAL_LEFT, g_session_running));
+                ImuOrientation::HORIZONTAL_TOP, g_session_running));
             sensors.push_back(new ImuSensor("jhh02", ses_dir,
                 sc->imu_queue_jhh02(), session_num,
                 ImuOrientation::HORIZONTAL_TOP, g_session_running));
