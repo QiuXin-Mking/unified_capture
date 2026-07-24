@@ -63,12 +63,15 @@ protected:
             int ret = survive_poll(ctx_);
             poll_count++;
             if (ret != 0) {
-                // 信号中断或其他错误 → 跳过 survive_close 避免 crash
-                fprintf(stderr, "[vive] survive_poll error (%d), "
-                        "skipping survive_close\n", ret);
+                fprintf(stderr, "[vive] survive_poll error (%d) poll=%d\n", ret, poll_count);
                 ctx_error_ = true;
                 break;
             }
+            if (poll_count % 500 == 0) {
+                fprintf(stderr, "[vive] poll #%d OK (%llu poses)\n",
+                        poll_count, (unsigned long long)pose_count_);
+            }
+            usleep(2000);
         }
 
         printf("[vive] collect done (%d polls, %llu poses)\n",
@@ -113,16 +116,18 @@ private:
     static void pose_callback(SurviveObject* so, uint64_t timecode,
                               const SurvivePose* pose) {
         if (!s_instance_ || !s_instance_->fp_) return;
+        if (!so || !pose) return;  // NULL 保护
         s_instance_->pose_count_++;
 
         uint64_t ts_us = elapsed_us();
+        const char* name = so->codename ? so->codename : "unknown";
         fprintf(s_instance_->fp_,
                 "{\"ts_us\":%llu,\"timecode\":%llu,\"codename\":\"%s\","
                 "\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,"
                 "\"qw\":%.6f,\"qx\":%.6f,\"qy\":%.6f,\"qz\":%.6f}\n",
                 (unsigned long long)ts_us,
                 (unsigned long long)timecode,
-                so->codename,
+                name,
                 pose->Pos[0], pose->Pos[1], pose->Pos[2],
                 pose->Rot[0], pose->Rot[1], pose->Rot[2], pose->Rot[3]);
 
