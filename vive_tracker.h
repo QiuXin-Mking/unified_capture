@@ -23,13 +23,16 @@ public:
 
 protected:
     void setup() override {
-        // 创建 CSV, session 根目录下与 encoder.csv 同级
+        // 创建 tracker.jsonl (pose) 和 tracker_angle.jsonl (angle)
         char path[256];
         snprintf(path, sizeof(path), "%s/tracker.jsonl",
                  session_dir_.c_str());
         fp_ = fopen(path, "w");
-        if (!fp_) {
-            fprintf(stderr, "[vive] 无法创建 %s\n", path);
+        snprintf(path, sizeof(path), "%s/tracker_angle.jsonl",
+                 session_dir_.c_str());
+        fp_angle_ = fopen(path, "w");
+        if (!fp_ || !fp_angle_) {
+            fprintf(stderr, "[vive] 无法创建输出文件\n");
             return;
         }
 
@@ -43,13 +46,14 @@ protected:
         if (!ctx_) {
             fprintf(stderr, "[vive] survive_init 失败 — "
                     "确认 Tracker 已通过 USB 连接, 且无其他进程占用\n");
-            fclose(fp_);
-            fp_ = nullptr;
             return;
         }
 
         s_instance_ = this;
         survive_install_pose_fn(ctx_, pose_callback);
+        survive_install_angle_fn(ctx_, angle_callback);         // Gen 1
+        survive_install_sweep_angle_fn(ctx_, sweep_angle_cb);   // Gen 2
+        survive_install_light_fn(ctx_, light_callback);         // raw sensor hit
 
         printf("[vive] setup OK\n");
         initialized_ = true;
@@ -74,8 +78,9 @@ protected:
             usleep(2000);
         }
 
-        printf("[vive] collect done (%d polls, %llu poses)\n",
-               poll_count, (unsigned long long)pose_count_);
+        printf("[vive] collect done (%d polls, %llu poses, %llu angles, %llu lights)\n",
+               poll_count, (unsigned long long)pose_count_,
+               (unsigned long long)angle_count_, (unsigned long long)light_count_);
     }
 
     void teardown() override {
@@ -90,6 +95,11 @@ protected:
             fclose(fp_);
             fp_ = nullptr;
         }
+        if (fp_angle_) {
+            fflush(fp_angle_);
+            fclose(fp_angle_);
+            fp_angle_ = nullptr;
+        }
         // 回绑 usbfs — 恢复驱动状态
         rebind_usbfs(dev_name_);
 
@@ -102,8 +112,11 @@ private:
     int session_num_;
     SurviveContext* ctx_ = nullptr;
     FILE* fp_ = nullptr;
+    FILE* fp_angle_ = nullptr;
     std::string dev_name_;       // sysfs 设备名, 用于回绑 usbfs
     uint64_t pose_count_ = 0;
+    uint64_t angle_count_ = 0;
+    uint64_t light_count_ = 0;
     bool initialized_ = false;
     bool ctx_error_ = false;
 
@@ -134,5 +147,67 @@ private:
         // 每 100 条 flush 一次
         if (s_instance_->pose_count_ % 100 == 0)
             fflush(s_instance_->fp_);
+    }
+
+    // libsurvive angle 回调 — 单基站即可, 不依赖 disambiguator
+    static void angle_callback(SurviveObject* so, int sensor_id, int acode,
+                               survive_timecode timecode, FLT length,
+                               FLT angle, uint32_t lh) {
+        if (!s_instance_ || !s_instance_->fp_angle_) return;
+        if (!so) return;
+        s_instance_->angle_count_++;
+
+        uint64_t ts_us = elapsed_us();
+        fprintf(s_instance_->fp_angle_,
+                "{\"ts_us\":%llu,\"timecode\":%llu,\"sensor\":%d,\"lh\":%u,"
+                "\"acode\":%d,\"length\":%.6f,\"angle\":%.6f}\n",
+                (unsigned long long)ts_us,
+                (unsigned long long)timecode,
+                sensor_id, lh, acode, (double)length, (double)angle);
+
+        if (s_instance_->angle_count_ % 100 == 0)
+            fflush(s_instance_->fp_angle_);
+    }
+
+    // libsurvive sweep_angle 回调 (Gen 2 base station)
+    static void sweep_angle_cb(SurviveObject* so, survive_channel channel,
+                               int sensor_id, survive_timecode timecode,
+                               int8_t plane, FLT angle) {
+        if (!s_instance_ || !s_instance_->fp_angle_) return;
+        if (!so) return;
+        s_instance_->angle_count_++;
+
+        uint64_t ts_us = elapsed_us();
+        fprintf(s_instance_->fp_angle_,
+                "{\"ts_us\":%llu,\"timecode\":%llu,\"channel\":%d,\"sensor\":%d,"
+                "\"plane\":%d,\"angle\":%.6f}\n",
+                (unsigned long long)ts_us,
+                (unsigned long long)timecode,
+                (int)channel, sensor_id, (int)plane, (double)angle);
+
+        if (s_instance_->angle_count_ % 100 == 0)
+            fflush(s_instance_->fp_angle_);
+    }
+
+    // libsurvive light 回调 — 最底层, 每次 sensor 被 sweep 击中
+    static void light_callback(SurviveObject* so, int sensor_id, int acode,
+                               int timeinsweep, survive_timecode timecode,
+                               survive_timecode length, uint32_t lighthouse) {
+        if (!s_instance_ || !s_instance_->fp_angle_) return;
+        if (!so) return;
+        s_instance_->light_count_++;
+
+        uint64_t ts_us = elapsed_us();
+        fprintf(s_instance_->fp_angle_,
+                "{\"type\":\"light\",\"ts_us\":%llu,\"timecode\":%llu,"
+                "\"sensor\":%d,\"lh\":%u,\"acode\":%d,"
+                "\"timeinsweep\":%d,\"length\":%llu}\n",
+                (unsigned long long)ts_us,
+                (unsigned long long)timecode,
+                sensor_id, lighthouse, acode,
+                timeinsweep, (unsigned long long)length);
+
+        if (s_instance_->light_count_ % 100 == 0)
+            fflush(s_instance_->fp_angle_);
     }
 };
