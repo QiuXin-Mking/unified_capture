@@ -203,8 +203,10 @@ protected:
         size_t total_h265 = 0;
         int empty_polls = 0;
 
-        uint32_t nv12_size = cfg_.width * cfg_.height * 3 / 2;
-        uint8_t* nv12 = new uint8_t[nv12_size];
+        // ★ nv12 延迟分配: 按实际 JPEG 尺寸, 不是配置尺寸
+        uint32_t nv12_size = 0;
+        uint8_t* nv12 = nullptr;
+        int nv12_w = 0, nv12_h = 0;
 
         fprintf(stderr, "[%s] DBG collect: entering frame loop (running=%d)\n",
                 cfg_.name, (int)running_);
@@ -233,13 +235,29 @@ protected:
             // --- MJPEG → BGR (turbojpeg) ---
             int w = 0, h = 0, subsamp = 0;
             if (tjDecompressHeader2(tj, mjpg, mjpg_len, &w, &h, &subsamp) != 0 ||
-                w <= 0 || w > 8000) {
+                w <= 0 || w > 8000 || h <= 0 || h > 8000) {
                 if (frame_idx == 0) {
                     fprintf(stderr, "[%s] DBG collect: tjDecompressHeader2 failed, len=%zu\n",
                             cfg_.name, mjpg_len);
                 }
                 TST_USBCam_SAVE_FRAME_RES(tstc_handle_, fb);
                 continue;
+            }
+
+            // ★ 按实际 JPEG 尺寸分配 nv12 (第一帧时分配)
+            if (!nv12 || w != nv12_w || h != nv12_h) {
+                delete[] nv12;
+                nv12_w = w; nv12_h = h;
+                nv12_size = w * h * 3 / 2;
+                nv12 = new (std::nothrow) uint8_t[nv12_size];
+                if (!nv12) {
+                    fprintf(stderr, "[%s] FATAL: nv12 alloc failed (w=%d h=%d size=%u)\n",
+                            cfg_.name, w, h, nv12_size);
+                    TST_USBCam_SAVE_FRAME_RES(tstc_handle_, fb);
+                    break;
+                }
+                fprintf(stderr, "[%s] actual resolution %dx%d (cfg=%dx%d)\n",
+                        cfg_.name, w, h, cfg_.width, cfg_.height);
             }
 
             uint32_t bgr_size = w * h * 3;
@@ -264,7 +282,7 @@ protected:
                 }
 
                 if (cfg_.output_y8 && y8_fp_) {
-                    fwrite(nv12, 1, cfg_.width * cfg_.height, y8_fp_);
+                    fwrite(nv12, 1, w * h, y8_fp_);  // ★ 按实际尺寸写 Y8
                 }
             } else if (frame_idx == 0) {
                 fprintf(stderr, "[%s] DBG collect: tjDecompress2 failed, ret=%d, w=%d h=%d len=%zu\n",

@@ -359,8 +359,10 @@ private:
         size_t total_h265 = 0;
         int empty_polls = 0;
 
-        uint32_t nv12_size = ch.width * ch.height * 3 / 2;
-        uint8_t* nv12 = new uint8_t[nv12_size];
+        // ★ nv12 延迟分配: 按实际 JPEG 尺寸, 不是配置尺寸
+        uint32_t nv12_size = 0;
+        uint8_t* nv12 = nullptr;
+        int nv12_w = 0, nv12_h = 0;
 
         fprintf(stderr, "[%s] DBG collect: entering frame loop (running=%d)\n",
                 ch.name, (int)running_);
@@ -389,9 +391,25 @@ private:
             // MJPEG → BGR
             int w = 0, h = 0, subsamp = 0;
             if (tjDecompressHeader2(tj, mjpg, mjpg_len, &w, &h, &subsamp) != 0 ||
-                w <= 0 || w > 8000) {
+                w <= 0 || w > 8000 || h <= 0 || h > 8000) {
                 TST_USBCam_SAVE_FRAME_RES(ch.tstc_handle, fb);
                 continue;
+            }
+
+            // ★ 按实际 JPEG 尺寸分配 nv12 (第一帧时分配)
+            if (!nv12 || w != nv12_w || h != nv12_h) {
+                delete[] nv12;
+                nv12_w = w; nv12_h = h;
+                nv12_size = w * h * 3 / 2;
+                nv12 = new (std::nothrow) uint8_t[nv12_size];
+                if (!nv12) {
+                    fprintf(stderr, "[%s] FATAL: nv12 alloc failed (w=%d h=%d size=%u)\n",
+                            ch.name, w, h, nv12_size);
+                    TST_USBCam_SAVE_FRAME_RES(ch.tstc_handle, fb);
+                    break;
+                }
+                fprintf(stderr, "[%s] actual resolution %dx%d (cfg=%dx%d)\n",
+                        ch.name, w, h, ch.width, ch.height);
             }
 
             uint32_t bgr_size = w * h * 3;
@@ -415,7 +433,7 @@ private:
                     total_h265 += h265_bytes;
                 }
                 if (ch.output_y8 && ch.y8_fp) {
-                    fwrite(nv12, 1, ch.width * ch.height, ch.y8_fp);
+                    fwrite(nv12, 1, w * h, ch.y8_fp);  // ★ 按实际尺寸写 Y8
                 }
             }
 

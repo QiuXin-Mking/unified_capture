@@ -86,17 +86,32 @@ struct MppEncoder {
         mpp_frame_set_eos(frame, 0);
 
         MppBuffer buf = nullptr;
-        mpp_buffer_get(buf_group, &buf, frame_size);
-        memcpy(mpp_buffer_get_ptr(buf), nv12, frame_size);
+        MPP_RET ret = mpp_buffer_get(buf_group, &buf, frame_size);
+        if (ret != MPP_OK || !buf) {
+            fprintf(stderr, "[MPP] mpp_buffer_get failed ret=%d buf=%p\n", ret, (void*)buf);
+            mpp_frame_deinit(&frame);
+            return 0;
+        }
+
+        void* ptr = mpp_buffer_get_ptr(buf);
+        if (!ptr) {
+            fprintf(stderr, "[MPP] mpp_buffer_get_ptr returned NULL\n");
+            mpp_frame_deinit(&frame);
+            return 0;
+        }
+
+        memcpy(ptr, nv12, frame_size);
+
         mpp_frame_set_buffer(frame, buf);
 
-        mpi->encode_put_frame(ctx, frame);
+        ret = mpi->encode_put_frame(ctx, frame);
         mpp_frame_deinit(&frame);
 
         // 取编码结果
         MppPacket pkt = nullptr;
         size_t written = 0;
-        if (!mpi->encode_get_packet(ctx, &pkt) && pkt && mpp_packet_get_length(pkt) > 0) {
+        MPP_RET pkt_ret = mpi->encode_get_packet(ctx, &pkt);
+        if (!pkt_ret && pkt && mpp_packet_get_length(pkt) > 0) {
             written = mpp_packet_get_length(pkt);
             fwrite(mpp_packet_get_data(pkt), 1, written, fp);
         }

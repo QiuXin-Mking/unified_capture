@@ -43,7 +43,12 @@ static std::atomic<bool> g_ready{false};
 static std::atomic<bool> g_socket_start_request{false};
 static bool g_use_h265 = true;
 
-static void sig_handler(int) {
+static void sig_handler(int sig) {
+    if (sig == SIGSEGV || sig == SIGABRT) {
+        fprintf(stderr, "\n!!! FATAL: caught signal %d\n", sig);
+        fflush(stderr);
+        _exit(1);
+    }
     g_running = false;
     g_session_running = false;
 }
@@ -284,7 +289,7 @@ static void run_session(const std::string& ses_dir, int session_num,
     }
     if (g_sixcam.enabled && g_sixcam.jhh04_dev && g_sixcam.jhh02_dev) {
         CameraConfig j04{"jhh04",SIX_VID,SIX_PID,0,3104,480,30,4000000,30,true,ImuOrientation::HORIZONTAL_TOP,false,true};
-        CameraConfig j02{"jhh02",JHH2_VID,JHH2_PID,2,3104,480,30,4000000,30,true,ImuOrientation::HORIZONTAL_TOP,g_use_h265,true};
+        CameraConfig j02{"jhh02",JHH2_VID,JHH2_PID,2,4000,1200,30,16000000,30,true,ImuOrientation::HORIZONTAL_TOP,g_use_h265,true};
         auto* sc = new SixCamSensor(j04,j02,*g_sixcam.jhh04_dev,*g_sixcam.jhh02_dev,ses_dir,session_num,g_session_running);
         sensors.push_back(sc);
         if (use_imu) {
@@ -350,6 +355,10 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
     signal(SIGPIPE, SIG_IGN);
+    signal(SIGSEGV, sig_handler);
+    signal(SIGABRT, sig_handler);
+    setlinebuf(stdout);
+    setlinebuf(stderr);
 
     bool use_gpio=true, use_socket=false, use_as5600=true, use_imu=true, use_vive=true, single_shot=false;
     std::string prefix;
