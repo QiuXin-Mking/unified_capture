@@ -139,11 +139,12 @@ struct MppEncoder {
     }
 
     void destroy() {
-        if (buf_group) { mpp_buffer_group_put(buf_group); buf_group = nullptr; }
         if (ctx) {
             mpi->reset(ctx);
             mpp_destroy(ctx);
             ctx = nullptr;
+            mpi = nullptr;
         }
+        // buf_group 是 MPP_BUFFER_INTERNAL, 由 context 管理, 不需要手动释放
     }
 };

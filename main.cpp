@@ -392,10 +392,16 @@ int main(int argc, char* argv[]) {
     printf("\n=== Unified Capture (%d camera(s)) ===\n", active);
     led_disable_trigger(); led_set(0);
 
-    // --socket 模式: 纯 socket 控制, 无限循环等 start
+    // --socket 模式: 纯 socket 控制, --single 每次退出让 systemd 重启
     if (use_socket) {
         printf("Socket mode. Use 'echo start|nc -U %s' to record.\n\n", SOCK_PATH);
+        // 从已有目录推断起始 session 号
         int session_num = 0;
+        for (int s = 1; s < 999; s++) {
+            char tmp[256]; snprintf(tmp, sizeof(tmp), "%s/session_%03d", prefix.c_str(), s);
+            struct stat st; if (stat(tmp, &st) == 0) session_num = s;
+        }
+        printf("Starting from session_%03d\n", session_num + 1);
         while (g_running) {
             struct pollfd pfd;
             pfd.fd = g_sock_fd; pfd.events = POLLIN;
@@ -411,6 +417,7 @@ int main(int argc, char* argv[]) {
             std::string sd = make_session_dir(prefix, session_num);
             run_session(sd, session_num, use_imu, use_as5600, use_vive, nullptr);
             led_set(0);
+            if (single_shot) break;  // --single: 跑一次就退出, 让 systemd 重启
         }
         if (g_sock_fd>=0) { close(g_sock_fd); unlink(SOCK_PATH); }
         return 0;
