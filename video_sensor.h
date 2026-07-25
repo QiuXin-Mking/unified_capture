@@ -44,7 +44,6 @@
 // ============================================================
 static std::mutex g_stream_start_mutex;
 extern std::atomic<int> g_jhh2_remaining;  // jhh04 等待此计数器归零
-extern std::atomic<bool> g_jhh02_init_done;  // 独立 JHH2 等 jhh02 先启流
 
 class VideoSensor : public Sensor {
 public:
@@ -157,10 +156,6 @@ protected:
             }
         }
 
-        // ★ 等 jhh02 先完成启流 (六目模组必须最先拿到锁)
-        for (int wait_i = 0; wait_i < 500 && !g_jhh02_init_done; wait_i++) {
-            usleep(20000);  // 20ms × 500 = 10s timeout
-        }
         // ★ 整段上锁: DEAL_WITH_INIT → stream线程 → STREAM_STATUS
         //    同 VID/PID 设备必须完全串行, 否则 SDK 内部状态冲突阻塞
         fprintf(stderr, "[%s] DBG setup: acquiring stream_start_mutex...\n", cfg_.name);
@@ -177,6 +172,7 @@ protected:
 
             fprintf(stderr, "[%s] DBG setup: creating stream thread...\n", cfg_.name);
             pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
+            usleep(200000);
             fprintf(stderr, "[%s] DBG setup: calling STREAM_STATUS(1)...\n", cfg_.name);
             TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
             fprintf(stderr, "[%s] DBG setup: STREAM_STATUS(1) done\n", cfg_.name);

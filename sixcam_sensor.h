@@ -38,7 +38,6 @@
 // 复用 VideoSensor 的全局互斥锁 (定义在 video_sensor.h)
 extern std::mutex g_stream_start_mutex;
 extern std::atomic<int> g_jhh2_remaining;  // jhh04 等待此计数器归零
-extern std::atomic<bool> g_jhh02_init_done;  // jhh02 优先启流完成标志
 
 // ============================================================
 // 单个通道的内部状态
@@ -228,6 +227,7 @@ protected:
                 }
                 fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
                 pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
+                usleep(200000);
                 fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1) blocking...\n", ch.name);
                 TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
                 fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
@@ -236,7 +236,6 @@ protected:
             }
             fprintf(stderr, "[%s] DBG: stream_start_mutex released\n", ch.name);
             ch.initialized = true;
-            g_jhh02_init_done = true;  // ★ 通知独立 JHH2 可以开始了
             printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
                    ch.name, ch.width, ch.height, ch.fps,
                    ch.output_h265 ? 'Y' : 'N', ch.output_y8 ? 'Y' : 'N');
@@ -262,6 +261,7 @@ protected:
                 }
                 fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
                 pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
+                usleep(200000);
                 fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1) blocking...\n", ch.name);
                 TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
                 fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
