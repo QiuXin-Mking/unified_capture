@@ -22,15 +22,21 @@
  */
 
 #include <atomic>
+#include <cerrno>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <dirent.h>
 #include <fcntl.h>
 #include <gpiod.h>
 #include <memory>
+#include <pthread.h>
 #include <string>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
 #include <vector>
 
@@ -45,6 +51,7 @@ extern "C" {
 #include "imu_sensor.h"
 #include "encoder_sensor.h"
 #include "vive_tracker.h"
+#include "as5600.h"
 
 // ============================================================
 // 全局状态
@@ -53,6 +60,19 @@ struct timespec g_t0;
 static std::atomic<bool> g_running{true};
 static std::atomic<bool> g_session_running{false};
 std::atomic<int> g_jhh2_remaining{0};  // jhh04 等待此计数器归零后才启流
+std::atomic<bool> g_jhh02_init_done{false};  // jhh02 优先启流标志
+
+// Socket 控制
+static std::atomic<bool> g_socket_start_request{false};
+static std::atomic<bool> g_ready{false};
+static bool g_as5600_ok = false;
+static bool g_vive_ok = false;
+static bool g_use_imu = true;     // runtime --no-imu flag
+static int g_sock_fd = -1;
+static pthread_t g_socket_thread;
+static std::string g_prefix;
+static std::atomic<int> g_session_num{0};
+static char g_current_session[64] = {0};
 
 static void sig_handler(int) {
     g_running = false;
@@ -243,7 +263,7 @@ static int resolve_camera_devices() {
                     SIX_VID, SIX_PID);
         }
 
-        // JHH02 使用 JHH2 VID/PID, group_order=2 (0=left, 1=right, 2=sixcam_jhh02)
+        // JHH2 组查找 (六目 JHH02 和独立 JHH2 共用 VID/PID)
         VidPidGroup* jhh2_grp = nullptr;
         for (auto& g : groups) {
             if (g.vid == JHH2_VID && g.pid == JHH2_PID) { jhh2_grp = &g; break; }
@@ -255,14 +275,65 @@ static int resolve_camera_devices() {
             groups.push_back(g);
             jhh2_grp = &groups.back();
         }
-        if (g_sixcam.enabled && jhh2_grp->count >= 3) {
-            g_sixcam.jhh02_dev = &jhh2_grp->devs[2];  // group_order=2
-            printf("  %-12s → [%04x:%04x group:2] %s  3104x480@30  IMU=Y (SixCam)\n",
-                   "jhh02", JHH2_VID, JHH2_PID, g_sixcam.jhh02_dev->Device_Path);
-        } else if (g_sixcam.enabled) {
-            fprintf(stderr, "WARN: sixcam JHH02 [%04x:%04x group_order=2] not found\n",
-                    JHH2_VID, JHH2_PID);
-            g_sixcam.jhh02_dev = nullptr;
+
+        // ── 六目模组 JHH02 + JHH2 独立双目: 按 Product 字符串区分 ──
+        //     TSTC SDK 字段: iProduct 区分设备类型
+        //       独立 JHH2 双目: iProduct 含 "CYBER"
+        //       六目模块 JHH02:  iProduct 不含 "CYBER"
+        if (g_sixcam.enabled) {
+            v4l2_dev_sys_data_t* jhh02_found = nullptr;
+            v4l2_dev_sys_data_t* cyber_devs[2] = {nullptr, nullptr};
+            int cyber_count = 0;
+
+            for (int i = 0; i < jhh2_grp->count; i++) {
+                const char* prod = jhh2_grp->devs[i].iProduct;
+                if (prod && strstr(prod, "CYBER")) {
+                    if (cyber_count < 2) cyber_devs[cyber_count++] = &jhh2_grp->devs[i];
+                } else if (!jhh02_found) {
+                    jhh02_found = &jhh2_grp->devs[i];
+                }
+            }
+
+            // ── 1. 分配 jhh02（六目模块的 JHH2 接口）──
+            if (jhh02_found) {
+                g_sixcam.jhh02_dev = jhh02_found;
+                printf("  %-12s → [%04x:%04x] %s  3104x480@30  IMU=Y (SixCam, prod='%s')\n",
+                       "jhh02", JHH2_VID, JHH2_PID,
+                       jhh02_found->Device_Path, jhh02_found->iProduct);
+            } else {
+                fprintf(stderr, "WARN: sixcam JHH02 [%04x:%04x] not found by product\n",
+                        JHH2_VID, JHH2_PID);
+            }
+
+            // ── 2. 重新分配独立 JHH2 双目 (按 CYBER product) ──
+            //     清除旧 group_order 分配, 按实际 CYBER 数量重分
+            for (int j = 0; j < N_CAMS; j++) {
+                if (CAMS[j].cfg.vid == JHH2_VID && CAMS[j].cfg.pid == JHH2_PID) {
+                    if (CAMS[j].dev_ptr != jhh02_found) {
+                        CAMS[j].enabled = false;
+                        CAMS[j].dev_ptr = nullptr;
+                    }
+                }
+            }
+            if (cyber_count >= 1) {
+                CAMS[0].enabled = true;
+                CAMS[0].dev_ptr = cyber_devs[0];
+                printf("  %-12s → [%04x:%04x] %s  %dx%d@%d  IMU=Y (CYBER #1)\n",
+                       CAMS[0].cfg.name, JHH2_VID, JHH2_PID,
+                       cyber_devs[0]->Device_Path,
+                       CAMS[0].cfg.width, CAMS[0].cfg.height, CAMS[0].cfg.fps);
+            }
+            if (cyber_count >= 2) {
+                CAMS[1].enabled = true;
+                CAMS[1].dev_ptr = cyber_devs[1];
+                printf("  %-12s → [%04x:%04x] %s  %dx%d@%d  IMU=Y (CYBER #2)\n",
+                       CAMS[1].cfg.name, JHH2_VID, JHH2_PID,
+                       cyber_devs[1]->Device_Path,
+                       CAMS[1].cfg.width, CAMS[1].cfg.height, CAMS[1].cfg.fps);
+            }
+            if (cyber_count == 0 && !jhh02_found) {
+                fprintf(stderr, "WARN: no JHH2 devices found (cyber=%d)\n", cyber_count);
+            }
         }
     }
 
@@ -304,6 +375,65 @@ static std::string default_prefix() {
 }
 
 // ============================================================
+// 外设探测 (启动时运行一次, 结果供 status 命令使用)
+// ============================================================
+static void probe_peripherals(bool probe_as5600, bool probe_vive) {
+    // ── AS5600 探测 ──
+    if (probe_as5600) {
+        as5600_dev_t dev = as5600_open(ENC_I2C_PATH, ENC_I2C_ADDR);
+        if (dev) {
+            if (as5600_probe(dev) == 0) {
+                g_as5600_ok = true;
+                printf("[probe] AS5600 detected at %s (0x%02x)\n", ENC_I2C_PATH, ENC_I2C_ADDR);
+            } else {
+                printf("[probe] AS5600 probe failed at %s\n", ENC_I2C_PATH);
+            }
+            as5600_close(dev);
+        } else {
+            printf("[probe] AS5600: cannot open %s\n", ENC_I2C_PATH);
+        }
+    }
+
+    // ── VIVE USB 探测 ──
+    if (probe_vive) {
+        DIR* dir = opendir("/sys/bus/usb/devices");
+        if (dir) {
+            struct dirent* entry;
+            char path[512], buf[64];
+            while ((entry = readdir(dir)) != nullptr) {
+                if (entry->d_name[0] == '.') continue;
+                snprintf(path, sizeof(path), "/sys/bus/usb/devices/%s/idVendor", entry->d_name);
+                int fd = open(path, O_RDONLY);
+                if (fd < 0) continue;
+                ssize_t n = read(fd, buf, sizeof(buf) - 1);
+                close(fd);
+                if (n <= 0) continue;
+                if (n > 0 && buf[n - 1] == '\n') buf[n - 1] = '\0';
+                else buf[n] = '\0';
+                if (strcmp(buf, "28de") != 0) continue;
+
+                snprintf(path, sizeof(path), "/sys/bus/usb/devices/%s/idProduct", entry->d_name);
+                fd = open(path, O_RDONLY);
+                if (fd < 0) continue;
+                n = read(fd, buf, sizeof(buf) - 1);
+                close(fd);
+                if (n <= 0) continue;
+                if (n > 0 && buf[n - 1] == '\n') buf[n - 1] = '\0';
+                else buf[n] = '\0';
+                if (strcmp(buf, "2300") != 0) continue;
+
+                g_vive_ok = true;
+                printf("[probe] VIVE Tracker (28de:2300) found at %s\n", entry->d_name);
+                break;
+            }
+            closedir(dir);
+        }
+        if (!g_vive_ok)
+            printf("[probe] VIVE Tracker not found\n");
+    }
+}
+
+// ============================================================
 // 运行一次 Session
 // ============================================================
 static void run_session(const std::string& ses_dir, int session_num,
@@ -325,6 +455,9 @@ static void run_session(const std::string& ses_dir, int session_num,
     if (g_sixcam.enabled && g_sixcam.jhh02_dev)
         g_jhh2_remaining++;  // 六目的 jhh02
     fprintf(stderr, "[main] JHH2 devices to init before jhh04: %d\n", (int)g_jhh2_remaining);
+
+    // ★ jhh02 优先策略: 独立 JHH2 等 jhh02 先完成 STREAM_STATUS
+    g_jhh02_init_done = !(g_sixcam.enabled && g_sixcam.jhh02_dev);
 
     // ---- 创建 VideoSensor + ImuSensor (独立 JHH2) ----
     for (int i = 0; i < N_CAMS; i++) {
@@ -416,6 +549,202 @@ static void run_session(const std::string& ses_dir, int session_num,
 }
 
 // ============================================================
+// Socket 控制 — 命令处理
+// ============================================================
+static const char* SOCK_PATH = "/tmp/unified_capture.sock";
+
+// 构建 cameras JSON 子对象
+static std::string cameras_json() {
+    std::string s = "\"cameras\":{";
+    bool first = true;
+    for (int i = 0; i < N_CAMS; i++) {
+        if (!first) s += ",";
+        s += "\"" + std::string(CAMS[i].cfg.name) + "\":" + (CAMS[i].enabled ? "true" : "false");
+        first = false;
+    }
+    if (g_sixcam.enabled) {
+        if (!first) s += ",";
+        s += "\"jhh04\":" + std::string(g_sixcam.jhh04_dev ? "true" : "false");
+        s += ",\"jhh02\":" + std::string(g_sixcam.jhh02_dev ? "true" : "false");
+    }
+    s += "}";
+    return s;
+}
+
+static std::string handle_start() {
+    if (!g_ready) {
+        return "{\"ok\":false,\"error\":\"not ready\"}";
+    }
+    if (g_session_running) {
+        char buf[256];
+        snprintf(buf, sizeof(buf),
+            "{\"ok\":false,\"error\":\"already running\",\"session\":\"%s\"}",
+            g_current_session);
+        return buf;
+    }
+
+    g_socket_start_request = true;
+
+    // 自旋等待主线程启动 session (最多 10s)
+    for (int i = 0; i < 1000 && !g_session_running; i++) {
+        usleep(10000);  // 10ms
+    }
+
+    if (!g_session_running) {
+        g_socket_start_request = false;
+        return "{\"ok\":false,\"error\":\"start timeout\"}";
+    }
+
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+        "{\"ok\":true,\"session\":\"%s\"}", g_current_session);
+    return buf;
+}
+
+static std::string handle_stop() {
+    if (!g_session_running) {
+        return "{\"ok\":false,\"error\":\"not running\"}";
+    }
+
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long elapsed_ms = (now.tv_sec - g_t0.tv_sec) * 1000
+                    + (now.tv_nsec - g_t0.tv_nsec) / 1000000;
+
+    g_session_running = false;
+
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+        "{\"ok\":true,\"elapsed_ms\":%ld}", elapsed_ms);
+    return buf;
+}
+
+static std::string handle_status() {
+    if (!g_ready) {
+        return "{\"ok\":true,\"ready\":false,\"running\":false,"
+               "\"session\":null,\"elapsed_ms\":0,"
+               "\"cameras\":{},\"imu\":false,\"as5600\":false,\"vive\":false}";
+    }
+
+    const char* session_str = "null";
+    long elapsed_ms = 0;
+    if (g_session_running) {
+        session_str = g_current_session;
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        elapsed_ms = (now.tv_sec - g_t0.tv_sec) * 1000
+                    + (now.tv_nsec - g_t0.tv_nsec) / 1000000;
+    }
+
+    char buf[1024];
+    if (g_session_running) {
+        snprintf(buf, sizeof(buf),
+            "{\"ok\":true,\"ready\":true,\"running\":true,"
+            "\"session\":\"%s\",\"elapsed_ms\":%ld,%s,"
+            "\"imu\":%s,\"as5600\":%s,\"vive\":%s}",
+            session_str, elapsed_ms, cameras_json().c_str(),
+            g_use_imu ? "true" : "false",
+            g_as5600_ok ? "true" : "false",
+            g_vive_ok ? "true" : "false");
+    } else {
+        snprintf(buf, sizeof(buf),
+            "{\"ok\":true,\"ready\":true,\"running\":false,"
+            "\"session\":null,\"elapsed_ms\":0,%s,"
+            "\"imu\":%s,\"as5600\":%s,\"vive\":%s}",
+            cameras_json().c_str(),
+            g_use_imu ? "true" : "false",
+            g_as5600_ok ? "true" : "false",
+            g_vive_ok ? "true" : "false");
+    }
+    return buf;
+}
+
+// ============================================================
+// Socket 线程
+// ============================================================
+static void* socket_thread(void*) {
+    int listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (listen_fd < 0) {
+        fprintf(stderr, "[socket] socket() failed: %s\n", strerror(errno));
+        return nullptr;
+    }
+    g_sock_fd = listen_fd;
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, SOCK_PATH, sizeof(addr.sun_path) - 1);
+
+    // 清理残留 sock 文件: 先 connect 试探, 失败则 unlink
+    int test_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (test_fd >= 0) {
+        if (connect(test_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+            unlink(SOCK_PATH);
+        }
+        close(test_fd);
+    }
+
+    if (bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        fprintf(stderr, "[socket] bind(%s) failed: %s\n", SOCK_PATH, strerror(errno));
+        close(listen_fd);
+        g_sock_fd = -1;
+        return nullptr;
+    }
+
+    if (listen(listen_fd, 4) < 0) {
+        fprintf(stderr, "[socket] listen() failed: %s\n", strerror(errno));
+        close(listen_fd);
+        g_sock_fd = -1;
+        return nullptr;
+    }
+
+    printf("[socket] listening on %s\n", SOCK_PATH);
+
+    while (g_running) {
+        int client_fd = accept(listen_fd, nullptr, nullptr);
+        if (client_fd < 0) {
+            if (!g_running) break;
+            continue;
+        }
+
+        char buf[256];
+        ssize_t n = read(client_fd, buf, sizeof(buf) - 1);
+        if (n > 0) {
+            buf[n] = '\0';
+            // 去掉末尾换行
+            if (n > 0 && buf[n - 1] == '\n') buf[n - 1] = '\0';
+
+            std::string response;
+            if (strcmp(buf, "start") == 0)          response = handle_start();
+            else if (strcmp(buf, "stop") == 0)      response = handle_stop();
+            else if (strcmp(buf, "status") == 0)    response = handle_status();
+            else response = "{\"ok\":false,\"error\":\"unknown command\"}";
+
+            response += "\n";
+            ssize_t ignored = write(client_fd, response.c_str(), response.size());
+            (void)ignored;
+        }
+        close(client_fd);
+    }
+
+    close(listen_fd);
+    return nullptr;
+}
+
+// ============================================================
+static void socket_init() {
+    pthread_create(&g_socket_thread, nullptr, socket_thread, nullptr);
+}
+
+static void socket_cleanup() {
+    if (g_sock_fd >= 0) {
+        shutdown(g_sock_fd, SHUT_RDWR);
+    }
+    pthread_join(g_socket_thread, nullptr);
+    unlink(SOCK_PATH);
+}
+
+// ============================================================
 static void print_usage(const char* prog) {
     printf(
         "Usage: %s [OPTIONS] [output_prefix]\n\n"
@@ -461,13 +790,24 @@ int main(int argc, char* argv[]) {
         else if (argv[i][0] != '-')              { prefix = argv[i]; }
     }
     if (prefix.empty()) prefix = default_prefix();
+    g_prefix = prefix;
+    g_use_imu = use_imu;
+
+    // ---- Socket 先初始化 (设备扫描可能耗时, 前端可先连上等 ready) ----
+    socket_init();
 
     // ---- 按 VID/PID 自动匹配摄像头设备 ----
     int active = resolve_camera_devices();
     if (active <= 0) {
         fprintf(stderr, "ERROR: No cameras found via TSTC SDK\n");
+    g_running = false;
+    socket_cleanup();
         return 1;
     }
+
+    // ---- 外设探测 ----
+    probe_peripherals(use_as5600, use_vive);
+    g_ready = true;
 
     printf("\n=== Unified Capture (%d camera(s) active) ===\n", active);
     printf("Output: %s/\n", prefix.c_str());
@@ -481,12 +821,17 @@ int main(int argc, char* argv[]) {
     if (!use_gpio) {
         // ---- 无 GPIO 模式: 启动即录, Ctrl-C 停止退出 ----
         printf("\nRecording... Press Ctrl-C to stop.\n");
+        g_session_num = 1;
+        snprintf(g_current_session, sizeof(g_current_session), "session_%03d", 1);
+        clock_gettime(CLOCK_MONOTONIC, &g_t0);  // 先写时间基, 再设 running
         g_session_running = true;
 
         std::string ses_dir = make_session_dir(prefix, 1);
         run_session(ses_dir, 1, use_imu, use_as5600, use_vive, nullptr);
 
         printf("=== Unified Capture Exit ===\n");
+    g_running = false;
+    socket_cleanup();
         return 0;
     }
 
@@ -495,9 +840,14 @@ int main(int argc, char* argv[]) {
     if (!chip) {
         fprintf(stderr, "gpiod_chip_open(%s) failed, fallback --no-gpio\n", GPIO_CHIP);
         printf("Recording... Press Ctrl-C to stop.\n");
+        g_session_num = 1;
+        snprintf(g_current_session, sizeof(g_current_session), "session_%03d", 1);
+        clock_gettime(CLOCK_MONOTONIC, &g_t0);
         g_session_running = true;
         std::string ses_dir = make_session_dir(prefix, 1);
         run_session(ses_dir, 1, use_imu, use_as5600, use_vive, nullptr);
+    g_running = false;
+    socket_cleanup();
         return 0;
     }
 
@@ -507,9 +857,14 @@ int main(int argc, char* argv[]) {
         if (btn) gpiod_line_release(btn);
         gpiod_chip_close(chip);
         printf("Recording... Press Ctrl-C to stop.\n");
+        g_session_num = 1;
+        snprintf(g_current_session, sizeof(g_current_session), "session_%03d", 1);
+        clock_gettime(CLOCK_MONOTONIC, &g_t0);
         g_session_running = true;
         std::string ses_dir = make_session_dir(prefix, 1);
         run_session(ses_dir, 1, use_imu, use_as5600, use_vive, nullptr);
+    g_running = false;
+    socket_cleanup();
         return 0;
     }
 
@@ -518,19 +873,30 @@ int main(int argc, char* argv[]) {
     int session_num = 0;
 
     while (g_running) {
-        // ── 等按钮 (空闲状态) ──
+        // ── 等启动信号 (GPIO 按钮 或 Socket start) ──
+        bool do_start = false;
         {
             struct timespec timeout = {0, 200000000};  // 200ms
             int ret = gpiod_line_event_wait(btn, &timeout);
-            if (ret <= 0) continue;
-
-            gpiod_line_event ev;
-            if (gpiod_line_event_read(btn, &ev) < 0) break;
-            if (ev.event_type != GPIOD_LINE_EVENT_FALLING_EDGE) continue;
+            if (ret > 0) {
+                gpiod_line_event ev;
+                if (gpiod_line_event_read(btn, &ev) < 0) break;
+                if (ev.event_type == GPIOD_LINE_EVENT_FALLING_EDGE)
+                    do_start = true;
+            }
         }
+        // Socket 触发 start
+        if (g_socket_start_request.exchange(false))
+            do_start = true;
+
+        if (!do_start) continue;
 
         // ── 开始录制 ──
         session_num++;
+        g_session_num = session_num;
+        snprintf(g_current_session, sizeof(g_current_session),
+                 "session_%03d", session_num);
+        clock_gettime(CLOCK_MONOTONIC, &g_t0);  // 先写时间基和 session 名, 再设 running
         g_session_running = true;
         led_set(1);
 
@@ -545,6 +911,7 @@ int main(int argc, char* argv[]) {
     gpiod_line_release(btn);
     gpiod_chip_close(chip);
 
+    socket_cleanup();
     printf("\n=== Unified Capture Exit ===\n");
     return 0;
 }

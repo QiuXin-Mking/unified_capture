@@ -25,6 +25,43 @@
 - **薄层设计**：Socket 线程只操作原子变量 + 返回响应，不直接调 `run_session()`
 - **主线程唯一 owner**：所有传感器生命周期在主线程上，避免并发问题
 - **GPIO 和 Socket 共存平等**：谁先到谁生效，互不阻塞
+- **常驻后台**：进程由 systemd 托管，始终保持运行，空闲时前端可随时查询设备连接状态
+
+### 进程生命周期
+
+```
+systemd 托管 (开机自启)
+     │
+     ▼
+┌──────────────────────────────────────────────────┐
+│  unified_capture (前台进程, systemd 管理)          │
+│                                                    │
+│  启动 → 扫描设备 → 空闲循环(永远运行)               │
+│            ↑           │                           │
+│            │     ┌─────┴──────┐                    │
+│            │     ▼            ▼                    │
+│            │  GPIO 按下    Socket start             │
+│            │     │            │                    │
+│            │     └─────┬──────┘                    │
+│            │           ▼                           │
+│            │     run_session()  ← 采集中            │
+│            │           │                           │
+│            │     ┌─────┴──────┐                    │
+│            │     ▼            ▼                    │
+│            │  GPIO 按下    Socket stop              │
+│            │     │            │                    │
+│            │     └─────┬──────┘                    │
+│            │           ▼                           │
+│            └── cleanup, 回到空闲循环                │
+│                                                    │
+│  前端随时 status → 获取设备连接状态                  │
+└──────────────────────────────────────────────────┘
+```
+
+**关键**：代码保持前台进程不变，daemonize 完全交给 systemd。好处：
+- 调试时可以直接 `./unified_capture` 前台跑，日志打 stdout
+- 部署时 `systemctl start unified_capture`，后台运行
+- 不需要在代码里写 `fork()` + `setsid()`
 
 ## 2. Socket 连接规范
 
@@ -278,7 +315,48 @@ if (fd >= 0) {
 }
 ```
 
-## 7. 前端接入示例
+## 7. 部署：systemd 服务
+
+代码不做 daemonize（保持前台进程），由 systemd 托管为后台服务。
+
+### 7.1 Service 文件
+
+`/etc/systemd/system/unified_capture.service`：
+
+```ini
+[Unit]
+Description=Unified Capture System (4 cameras + IMU + AS5600 + VIVE)
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/unified_capture --socket /data/capture
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 7.2 常用操作
+
+```bash
+# 安装
+sudo cp unified_capture.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable unified_capture   # 开机自启
+sudo systemctl start unified_capture    # 立即启动
+
+# 运维
+sudo systemctl status unified_capture   # 查看状态
+sudo journalctl -u unified_capture -f   # 实时日志
+sudo systemctl restart unified_capture  # 重启
+sudo systemctl stop unified_capture     # 停止
+```
+
+## 8. 前端接入示例
 
 ```javascript
 // Node.js
@@ -307,8 +385,8 @@ if (!status.running) { await unifiedCtl('start'); }
 await unifiedCtl('stop');
 ```
 
-## 8. 变更记录
+## 9. 变更记录
 
 | 日期 | 内容 |
 |------|------|
-| 2026-07-25 | 初始版本，19 项设计决策确认 |
+| 2026-07-25 | 初始版本，20 项设计决策确认，含 systemd 部署方案 |

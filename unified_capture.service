@@ -1,0 +1,18 @@
+[Unit]
+Description=Unified Capture System (4 cameras + IMU + AS5600 + VIVE)
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/unified_capture /data/capture
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65536
+
+# 若需 GPIO 权限, 可能需要添加:
+# SupplementaryGroups=gpio
+
+[Install]
+WantedBy=multi-user.target
