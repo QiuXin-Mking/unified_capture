@@ -410,8 +410,7 @@ private:
         fmt.u_Height = (uint32_t)self->cfg_.height;
         fmt.u_Fps    = (uint32_t)self->cfg_.fps;
         TST_USBCam_Video_DEAL_WITH(self->tstc_handle_, fmt);
-        TST_USBCam_Video_DEAL_WITH_UNINIT(self->tstc_handle_);
-        TST_USBCam_DELETE_DEVICE_POINT(self->tstc_handle_);
+        // --single 模式进程退出时 OS 回收, 无需 SDK 清理
         return nullptr;
     }
 };
