@@ -315,6 +315,8 @@ protected:
             if (ch.y8_fp) { fclose(ch.y8_fp); ch.y8_fp = nullptr; }
 
             // --single 模式进程退出时 OS 回收, 无需 SDK 清理
+            // TST_USBCam_Video_DEAL_WITH_UNINIT(ch.tstc_handle);
+            // TST_USBCam_DELETE_DEVICE_POINT(ch.tstc_handle);
 
             printf("[%s] teardown OK\n", ch.name);
         }
