@@ -293,6 +293,7 @@ protected:
             // 停止 TSTC 流
             fprintf(stderr, "[%s] DBG teardown: stopping event loop...\n", ch.name);
             TST_USBCam_EVENT_LoopMode(ch.tstc_handle, 0);
+            TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 0);  // 配对 STREAM_STATUS(1) in setup
 
             // 等待 stream 线程退出
             if (ch.stream_thread) {

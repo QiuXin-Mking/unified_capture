@@ -305,6 +305,7 @@ protected:
         // 停止流
         fprintf(stderr, "[%s] DBG collect: stopping TSTC stream...\n", cfg_.name);
         TST_USBCam_EVENT_LoopMode(tstc_handle_, 0);
+        TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 0);  // 配对 STREAM_STATUS(1) in setup
 
         // Flush MPP
         if (cfg_.output_h265) {
