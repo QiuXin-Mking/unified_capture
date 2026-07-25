@@ -4,7 +4,7 @@ After=multi-user.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/unified_capture /data/capture
+ExecStart=/usr/local/bin/unified_capture --no-vive /data/capture
 Restart=always
 RestartSec=5
 StandardOutput=journal
