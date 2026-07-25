@@ -41,6 +41,7 @@ static const char* SOCK_PATH = "/tmp/unified_capture.sock";
 static int g_sock_fd = -1;
 static std::atomic<bool> g_ready{false};
 static std::atomic<bool> g_socket_start_request{false};
+static bool g_use_h265 = true;
 
 static void sig_handler(int) {
     g_running = false;
@@ -283,7 +284,7 @@ static void run_session(const std::string& ses_dir, int session_num,
     }
     if (g_sixcam.enabled && g_sixcam.jhh04_dev && g_sixcam.jhh02_dev) {
         CameraConfig j04{"jhh04",SIX_VID,SIX_PID,0,3104,480,30,4000000,30,true,ImuOrientation::HORIZONTAL_TOP,false,true};
-        CameraConfig j02{"jhh02",JHH2_VID,JHH2_PID,2,3104,480,30,4000000,30,true,ImuOrientation::HORIZONTAL_TOP,true,true};
+        CameraConfig j02{"jhh02",JHH2_VID,JHH2_PID,2,3104,480,30,4000000,30,true,ImuOrientation::HORIZONTAL_TOP,g_use_h265,true};
         auto* sc = new SixCamSensor(j04,j02,*g_sixcam.jhh04_dev,*g_sixcam.jhh02_dev,ses_dir,session_num,g_session_running);
         sensors.push_back(sc);
         if (use_imu) {
@@ -359,11 +360,18 @@ int main(int argc, char* argv[]) {
         else if (!strcmp(argv[i],"--no-as5600")) use_as5600=false;
         else if (!strcmp(argv[i],"--no-imu")) use_imu=false;
         else if (!strcmp(argv[i],"--no-vive")) use_vive=false;
+        else if (!strcmp(argv[i],"--no-h265")) g_use_h265=false;
         else if (!strcmp(argv[i],"--single")) single_shot=true;
         else if (!strcmp(argv[i],"-h")||!strcmp(argv[i],"--help")) { print_usage(argv[0]); return 0; }
         else if (argv[i][0]!='-') prefix=argv[i];
     }
     if (prefix.empty()) prefix = default_prefix();
+
+    // --no-h265: 全局禁用 H.265 编码 (排查用)
+    if (!g_use_h265) {
+        for (int i = 0; i < N_CAMS; i++) CAMS[i].cfg.output_h265 = false;
+        printf("[note] H.265 disabled (--no-h265), output Y8 only\n");
+    }
 
     int active = resolve_camera_devices();
     if (active <= 0) { fprintf(stderr,"ERROR: No cameras\n"); return 1; }
