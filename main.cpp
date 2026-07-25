@@ -295,10 +295,22 @@ static void run_session(const std::string& ses_dir, int session_num,
     if (use_vive) sensors.push_back(new ViveTrackerSensor(ses_dir,session_num,g_session_running));
 
     if (sensors.empty()) { fprintf(stderr,"WARN: no sensors\n"); return; }
-    size_t n = sensors.size()+1;
-    SimpleBarrier gate(n);
+
+    // ★ Barrier 只包含 sensor 线程, main 线程不入
+    //    这样 main 可以在等 sensor setup 的同时处理 socket 命令
+    SimpleBarrier gate(sensors.size());
     for (auto* s : sensors) s->launch(gate);
-    gate.arrive_and_wait();
+
+    while (!gate.wait_all_arrived(100)) {
+        if (g_sock_fd >= 0) {
+            struct pollfd pfd;
+            pfd.fd = g_sock_fd; pfd.events = POLLIN;
+            if (poll(&pfd, 1, 0) > 0) {
+                int c = accept4(g_sock_fd, nullptr, nullptr, SOCK_NONBLOCK);
+                if (c >= 0) { socket_handle_client(c); close(c); }
+            }
+        }
+    }
     printf(">>> ALL SENSORS GO <<<\n");
 
     // 等停止信号: GPIO + Socket
@@ -338,11 +350,12 @@ int main(int argc, char* argv[]) {
     signal(SIGTERM, sig_handler);
     signal(SIGPIPE, SIG_IGN);
 
-    bool use_gpio=true, use_as5600=true, use_imu=true, use_vive=true, single_shot=false;
+    bool use_gpio=true, use_socket=false, use_as5600=true, use_imu=true, use_vive=true, single_shot=false;
     std::string prefix;
     for (int i=1;i<argc;i++) {
         if (!strcmp(argv[i],"--scan")) { scan_devices(); return 0; }
         else if (!strcmp(argv[i],"--no-gpio")) use_gpio=false;
+        else if (!strcmp(argv[i],"--socket")) { use_socket=true; use_gpio=false; }
         else if (!strcmp(argv[i],"--no-as5600")) use_as5600=false;
         else if (!strcmp(argv[i],"--no-imu")) use_imu=false;
         else if (!strcmp(argv[i],"--no-vive")) use_vive=false;
@@ -362,7 +375,31 @@ int main(int argc, char* argv[]) {
     printf("\n=== Unified Capture (%d camera(s)) ===\n", active);
     led_disable_trigger(); led_set(0);
 
-    // --no-gpio 模式
+    // --socket 模式: 纯 socket 控制, 无限循环等 start
+    if (use_socket) {
+        printf("Socket mode. Use 'echo start|nc -U %s' to record.\n\n", SOCK_PATH);
+        int session_num = 0;
+        while (g_running) {
+            struct pollfd pfd;
+            pfd.fd = g_sock_fd; pfd.events = POLLIN;
+            while (g_running && poll(&pfd, 1, 200) <= 0) {}
+            if (!g_running) break;
+            int c = accept4(g_sock_fd, nullptr, nullptr, SOCK_NONBLOCK);
+            if (c >= 0) { socket_handle_client(c); close(c); }
+            if (!g_socket_start_request.exchange(false)) continue;
+
+            session_num++;
+            g_session_running = true;
+            led_set(1);
+            std::string sd = make_session_dir(prefix, session_num);
+            run_session(sd, session_num, use_imu, use_as5600, use_vive, nullptr);
+            led_set(0);
+        }
+        if (g_sock_fd>=0) { close(g_sock_fd); unlink(SOCK_PATH); }
+        return 0;
+    }
+
+    // --no-gpio 模式: 启动即录
     if (!use_gpio) {
         printf("Recording... Press Ctrl-C to stop.\n");
         g_session_running = true;
