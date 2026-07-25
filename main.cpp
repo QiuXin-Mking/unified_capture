@@ -306,7 +306,7 @@ static void run_session(const std::string& ses_dir, int session_num,
             struct pollfd pfd;
             pfd.fd = g_sock_fd; pfd.events = POLLIN;
             if (poll(&pfd, 1, 0) > 0) {
-                int c = accept4(g_sock_fd, nullptr, nullptr, SOCK_NONBLOCK);
+                int c = accept(g_sock_fd, nullptr, nullptr);
                 if (c >= 0) { socket_handle_client(c); close(c); }
             }
         }
@@ -327,7 +327,7 @@ static void run_session(const std::string& ses_dir, int session_num,
                         gpiod_line_event ev; gpiod_line_event_read(btn, &ev);
                         if (ev.event_type == GPIOD_LINE_EVENT_FALLING_EDGE) g_session_running = false;
                     } else if (g_sock_fd >= 0 && pfds[i].fd == g_sock_fd) {
-                        int c = accept4(g_sock_fd, nullptr, nullptr, SOCK_NONBLOCK);
+                        int c = accept(g_sock_fd, nullptr, nullptr);
                         if (c >= 0) { socket_handle_client(c); close(c); }
                     }
                 }
@@ -384,7 +384,7 @@ int main(int argc, char* argv[]) {
             pfd.fd = g_sock_fd; pfd.events = POLLIN;
             while (g_running && poll(&pfd, 1, 200) <= 0) {}
             if (!g_running) break;
-            int c = accept4(g_sock_fd, nullptr, nullptr, SOCK_NONBLOCK);
+            int c = accept(g_sock_fd, nullptr, nullptr);
             if (c >= 0) { socket_handle_client(c); close(c); }
             if (!g_socket_start_request.exchange(false)) continue;
 
@@ -444,7 +444,7 @@ int main(int argc, char* argv[]) {
 
         // 处理 socket (非阻塞)
         if (ret > 0 && pfds[1].revents & POLLIN) {
-            int c = accept4(g_sock_fd, nullptr, nullptr, SOCK_NONBLOCK);
+            int c = accept(g_sock_fd, nullptr, nullptr);
             if (c >= 0) { socket_handle_client(c); close(c); }
         }
 
