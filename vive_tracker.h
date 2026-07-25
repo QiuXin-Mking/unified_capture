@@ -52,7 +52,7 @@ protected:
         s_instance_ = this;
         survive_install_pose_fn(ctx_, pose_callback);
         survive_install_angle_fn(ctx_, angle_callback);         // Gen 1
-        survive_install_sweep_angle_fn(ctx_, sweep_angle_cb);   // Gen 2
+        // Gen 2 callbacks (not needed for LH gen 1 system)
         survive_install_light_fn(ctx_, light_callback);         // raw sensor hit
 
         printf("[vive] setup OK\n");
