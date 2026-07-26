@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <gpiod.h>
 #include <memory>
+#include <mutex>
 #include <poll.h>
 #include <string>
 #include <sys/socket.h>
@@ -42,6 +43,11 @@ static int g_sock_fd = -1;
 static std::atomic<bool> g_ready{false};
 static std::atomic<bool> g_socket_start_request{false};
 static bool g_use_h265 = true;
+
+// Preview JPEG export (no extra thread — flags are polled in sensor collect loops)
+static std::atomic<bool> g_preview_pending{false};
+static std::string g_preview_path;
+static std::mutex g_preview_mutex;
 
 static void sig_handler(int sig) {
     if (sig == SIGSEGV || sig == SIGABRT) {
@@ -234,6 +240,16 @@ static void socket_handle_client(int fd) {
             long e = (now.tv_sec-g_t0.tv_sec)*1000 + (now.tv_nsec-g_t0.tv_nsec)/1000000;
             g_session_running = false;
             char b[64]; snprintf(b,sizeof(b),"{\"ok\":true,\"elapsed_ms\":%ld}",e); resp = b; }
+    } else if (!strncmp(buf, "preview:", 8)) {
+        const char* path = buf + 8;
+        if (!g_session_running) {
+            resp = "{\"ok\":false,\"error\":\"not running\"}";
+        } else {
+            std::lock_guard<std::mutex> lock(g_preview_mutex);
+            g_preview_path = path;
+            g_preview_pending = true;
+            resp = "{\"ok\":true}";
+        }
     } else if (!strcmp(buf, "status")) {
         if (!g_ready) resp = "{\"ok\":true,\"ready\":false,\"running\":false,\"session\":null,\"elapsed_ms\":0,\"cameras\":{},\"imu\":false,\"as5600\":false,\"vive\":false}";
         else {

@@ -45,6 +45,11 @@
 static std::mutex g_stream_start_mutex;
 extern std::atomic<int> g_jhh2_remaining;  // jhh04 等待此计数器归零
 
+// Preview JPEG export globals (defined in main.cpp)
+extern std::atomic<bool> g_preview_pending;
+extern std::string g_preview_path;
+extern std::mutex g_preview_mutex;
+
 class VideoSensor : public Sensor {
 public:
     VideoSensor(const CameraConfig& cfg,
@@ -283,6 +288,49 @@ protected:
 
                 if (cfg_.output_y8 && y8_fp_) {
                     fwrite(nv12, 1, w * h, y8_fp_);  // ★ 按实际尺寸写 Y8
+                }
+
+                // Preview JPEG export (on-demand, in collect thread — no extra pthread)
+                if (g_preview_pending.load(std::memory_order_acquire)) {
+                    std::lock_guard<std::mutex> lock(g_preview_mutex);
+                    if (g_preview_pending.load()) {
+                        // Downscale to 1/4 resolution for 5.5" screen preview
+                        int pw = w / 4, ph = h / 4;
+                        if (pw < 1) pw = 1; if (ph < 1) ph = 1;
+                        std::vector<uint8_t> scaled(pw * ph * 3);
+                        for (int y = 0; y < ph; y++) {
+                            for (int x = 0; x < pw; x++) {
+                                int sx = x * 4, sy = y * 4;
+                                int src_off = (sy * w + sx) * 3;
+                                int dst_off = (y * pw + x) * 3;
+                                scaled[dst_off]   = bgr[src_off];
+                                scaled[dst_off+1] = bgr[src_off+1];
+                                scaled[dst_off+2] = bgr[src_off+2];
+                            }
+                        }
+                        // JPEG compress (libjpeg-turbo, already linked)
+                        unsigned long jpg_size = 0;
+                        uint8_t* jpg_buf = nullptr;
+                        tjhandle jpg_h = tjInitCompress();
+                        if (jpg_h) {
+                            int jr = tjCompress2(jpg_h, scaled.data(), pw, ph, 0,
+                                                 TJPF_BGR, &jpg_buf, &jpg_size,
+                                                 TJSAMP_444, 85, TJFLAG_FASTDCT);
+                            if (jr == 0 && jpg_buf && jpg_size > 0) {
+                                // Atomic write: temp file → rename
+                                std::string tmp = g_preview_path + ".tmp";
+                                FILE* fp = fopen(tmp.c_str(), "wb");
+                                if (fp) {
+                                    fwrite(jpg_buf, 1, jpg_size, fp);
+                                    fclose(fp);
+                                    rename(tmp.c_str(), g_preview_path.c_str());
+                                }
+                                tjFree(jpg_buf);
+                            }
+                            tjDestroy(jpg_h);
+                        }
+                        g_preview_pending = false;
+                    }
                 }
             } else if (frame_idx == 0) {
                 fprintf(stderr, "[%s] DBG collect: tjDecompress2 failed, ret=%d, w=%d h=%d len=%zu\n",
