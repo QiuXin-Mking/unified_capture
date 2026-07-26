@@ -1,5 +1,23 @@
 # unified_capture ↔ device-ui 对接实现详细记录
 
+## 元数据
+
+| 字段 | 内容 |
+|------|------|
+| 记录类型 | 集成记录 |
+| 状态 | 已完成 |
+| 开始日期 | 2026-07-26 |
+| 最后更新 | 2026-07-26 |
+| 负责人 | unified_capture / device-ui 团队 |
+| 关联计划 | [`../plans/2026-07-26-integrate-unified-capture-with-device-ui.md`](../plans/2026-07-26-integrate-unified-capture-with-device-ui.md) |
+
+## 提取的 ADR
+
+- [在采集循环内同步生成预览 JPEG](../decisions/2026-07-26-preview-jpeg-in-collect-loop.md)
+- [由 device-ui 后端承担采集协议适配](../decisions/2026-07-26-device-ui-adaptation-boundary.md)
+- [自动检测运行模式并短期缓存](../decisions/2026-07-26-runtime-mode-auto-detection.md)
+- [将 session 目录映射为 Recording 模型](../decisions/2026-07-26-session-recording-mapping.md)
+
 > 日期: 2026-07-26
 > 涉及仓库: unified_capture + device-ui
 > 关联计划: docs/plans/2026-07-26-integrate-unified-capture-with-device-ui.md
