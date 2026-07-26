@@ -45,9 +45,9 @@ static std::atomic<bool> g_socket_start_request{false};
 static bool g_use_h265 = true;
 
 // Preview JPEG export (no extra thread — flags are polled in sensor collect loops)
-static std::atomic<bool> g_preview_pending{false};
-static std::string g_preview_path;
-static std::mutex g_preview_mutex;
+std::atomic<bool> g_preview_pending{false};
+std::string g_preview_path;
+std::mutex g_preview_mutex;
 
 static void sig_handler(int sig) {
     if (sig == SIGSEGV || sig == SIGABRT) {

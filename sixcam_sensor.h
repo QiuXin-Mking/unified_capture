@@ -442,11 +442,11 @@ private:
                 }
 
                 // Preview JPEG export (on-demand, only from color channel)
-                if (ch.output_h265 && g_preview_pending.load(std::memory_order_acquire)) {
+                if (ch.output_h265 && g_preview_pending.load()) {
                     std::lock_guard<std::mutex> lock(g_preview_mutex);
                     if (g_preview_pending.load()) {
                         int pw = w / 4, ph = h / 4;
-                        if (pw < 1) pw = 1; if (ph < 1) ph = 1;
+                        if (pw < 1) { pw = 1; } if (ph < 1) { ph = 1; }
                         std::vector<uint8_t> scaled(pw * ph * 3);
                         for (int y = 0; y < ph; y++) {
                             for (int x = 0; x < pw; x++) {
@@ -462,9 +462,9 @@ private:
                         uint8_t* jpg_buf = nullptr;
                         tjhandle jpg_h = tjInitCompress();
                         if (jpg_h) {
-                            int jr = tjCompress2(jpg_h, scaled.data(), pw, ph, 0,
+                            int jr = tjCompress2(jpg_h, scaled.data(), pw, 0, ph,
                                                  TJPF_BGR, &jpg_buf, &jpg_size,
-                                                 TJSAMP_444, 85, TJFLAG_FASTDCT);
+                                                 TJSAMP_420, 85, TJFLAG_FASTDCT);
                             if (jr == 0 && jpg_buf && jpg_size > 0) {
                                 std::string tmp = g_preview_path + ".tmp";
                                 FILE* fp = fopen(tmp.c_str(), "wb");
