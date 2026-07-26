@@ -3,59 +3,60 @@
  * vive_tracker.h — VIVE Tracker 3.0 位姿采集 Sensor
  *
  * 通过 libsurvive Low-Level Callback API 采集 Tracker 6DoF 位姿.
- * 输出 CSV 带 CLOCK_MONOTONIC 时间戳, 与视频/IMU/编码器对齐.
+ * 支持多个 Tracker (左/右), 自动按 codename 分文件输出.
+ * 输出 JSONL 带 CLOCK_MONOTONIC 时间戳, 与视频/IMU/编码器对齐.
  */
 
 #include "sensor.h"
 #include "vive_usb.h"
 #include "libsurvive/survive.h"
 
+#include <map>
+#include <mutex>
+#include <vector>
+
 class ViveTrackerSensor : public Sensor {
 public:
     ViveTrackerSensor(const std::string& session_dir,
                       int session_num,
+                      const std::string& session_ts,
                       std::atomic<bool>& running)
         : Sensor("vive_tracker", running)
         , session_dir_(session_dir)
-        , session_num_(session_num) {}
+        , session_num_(session_num)
+        , session_ts_(session_ts) {}
 
     ~ViveTrackerSensor() override = default;
 
 protected:
     void setup() override {
-        // 创建 tracker.jsonl (pose) 和 tracker_angle.jsonl (angle)
+        // 1. 扫描并 unbind 所有 VIVE Tracker
+        dev_names_ = unbind_all_vive_trackers();
+        printf("[vive] found %zu tracker(s)\n", dev_names_.size());
+
+        // 2. 创建 tracker 子目录
         char path[256];
-        snprintf(path, sizeof(path), "%s/tracker.jsonl",
-                 session_dir_.c_str());
-        fp_ = fopen(path, "w");
-        snprintf(path, sizeof(path), "%s/tracker_angle.jsonl",
-                 session_dir_.c_str());
-        fp_angle_ = fopen(path, "w");
-        if (!fp_ || !fp_angle_) {
-            fprintf(stderr, "[vive] 无法创建输出文件\n");
-            return;
-        }
+        snprintf(path, sizeof(path), "%s/tracker", session_dir_.c_str());
+        mkdir_p(path, 0755);
+        tracker_dir_ = path;
 
-        // 先自动 unbind usbfs (解决 LIBUSB_ERROR_BUSY), 记下设备名用于回绑
-        unbind_usbfs_for_vive(dev_name_);
-
-        // survive_init 会解析命令行参数, 传假的 argv[0] 即可
+        // 3. survive_init 自动发现所有连接的 tracker
         char prog[] = "vive_tracker";
-        char* dummy_argv[] = { prog, nullptr };
-        ctx_ = survive_init(1, dummy_argv);
+        char lh_count[] = "-l", lh_val[] = "2";
+        char* dummy_argv[] = { prog, lh_count, lh_val, nullptr };
+        ctx_ = survive_init(3, dummy_argv);
         if (!ctx_) {
             fprintf(stderr, "[vive] survive_init 失败 — "
                     "确认 Tracker 已通过 USB 连接, 且无其他进程占用\n");
             return;
         }
 
+        // 4. 安装回调 (单实例指针, 回调中按 codename 动态创建文件)
+        //    ★ 只装 pose 回调 (light/angle 回调不装, 参照 capture_vive.c)
         s_instance_ = this;
         survive_install_pose_fn(ctx_, pose_callback);
-        survive_install_angle_fn(ctx_, angle_callback);         // Gen 1
-        // Gen 2 callbacks (not needed for LH gen 1 system)
-        survive_install_light_fn(ctx_, light_callback);         // raw sensor hit
 
-        printf("[vive] setup OK\n");
+        printf("[vive] setup OK (%zu devices)\n", dev_names_.size());
         initialized_ = true;
     }
 
@@ -72,8 +73,9 @@ protected:
                 break;
             }
             if (poll_count % 500 == 0) {
-                fprintf(stderr, "[vive] poll #%d OK (%llu poses)\n",
-                        poll_count, (unsigned long long)pose_count_);
+                fprintf(stderr, "[vive] poll #%d OK (%llu poses, %llu angles, %llu lights)\n",
+                        poll_count, (unsigned long long)pose_count_,
+                        (unsigned long long)angle_count_, (unsigned long long)light_count_);
             }
             usleep(2000);
         }
@@ -84,24 +86,24 @@ protected:
     }
 
     void teardown() override {
-        if (ctx_) {
-            if (!ctx_error_) {
-                survive_close(ctx_);
-            }
+        // ★ survive_close 在双 tracker 时可能阻塞, 跳过显式关闭
+        //    USB 设备和内存由进程退出时系统回收
+        if (ctx_ && !ctx_error_) {
+            // survive_close(ctx_);  // 可能阻塞, 不调用
             ctx_ = nullptr;
         }
-        if (fp_) {
-            fflush(fp_);
-            fclose(fp_);
-            fp_ = nullptr;
+
+        // 关闭所有动态创建的文件
+        {
+            std::lock_guard<std::mutex> lock(file_mutex_);
+            for (auto& kv : tracker_files_) {
+                if (kv.second) { fflush(kv.second); fclose(kv.second); }
+            }
+            tracker_files_.clear();
         }
-        if (fp_angle_) {
-            fflush(fp_angle_);
-            fclose(fp_angle_);
-            fp_angle_ = nullptr;
-        }
-        // 回绑 usbfs — 恢复驱动状态
-        rebind_usbfs(dev_name_);
+
+        // 回绑所有 tracker 到 usbfs
+        rebind_all_usbfs(dev_names_);
 
         s_instance_ = nullptr;
         printf("[vive] teardown OK\n");
@@ -110,104 +112,137 @@ protected:
 private:
     std::string session_dir_;
     int session_num_;
+    std::string session_ts_;
+    std::string tracker_dir_;                           // tracker/ 子目录
     SurviveContext* ctx_ = nullptr;
-    FILE* fp_ = nullptr;
-    FILE* fp_angle_ = nullptr;
-    std::string dev_name_;       // sysfs 设备名, 用于回绑 usbfs
+    std::vector<std::string> dev_names_;                // sysfs 设备名列表 (用于回绑)
     uint64_t pose_count_ = 0;
     uint64_t angle_count_ = 0;
     uint64_t light_count_ = 0;
     bool initialized_ = false;
     bool ctx_error_ = false;
 
-    // 只有一个 VIVE Tracker, 用静态实例指针给回调用
+    // ── Tracker 标签映射: 序列号 → 友好名称 ──
+    //     编辑此表以匹配你的 tracker 序列号
+    static std::map<std::string, std::string> tracker_labels_;
+
+    // 动态文件: label → FILE* (pose + angle + light 统一写入同一文件)
+    std::map<std::string, FILE*> tracker_files_;
+    std::mutex file_mutex_;
+
+    // 单实例指针 (libsurvive C 回调用)
     static inline ViveTrackerSensor* s_instance_ = nullptr;
 
-    // libsurvive 位姿回调 (跑在 survive_poll() 线程内)
-    // timecode: Tracker 内部 48-tick 时间戳 (survive_long_timecode = uint64_t)
-    // pose:    位置 (米) + 四元数
+    // 将序列号映射为友好标签
+    static std::string resolve_label(const char* codename) {
+        if (!codename) return "unknown";
+        std::string key(codename);
+        auto it = tracker_labels_.find(key);
+        return (it != tracker_labels_.end()) ? it->second : key;
+    }
+
+    // ── 获取或创建 tracker 专属文件 (pose + angle + light 统一写入) ──
+    FILE* get_or_create_tracker_file(const char* codename) {
+        if (!codename) codename = "unknown";
+        std::string label = resolve_label(codename);
+        std::lock_guard<std::mutex> lock(file_mutex_);
+        auto it = tracker_files_.find(label);
+        if (it != tracker_files_.end()) return it->second;
+
+        char path[256];
+        snprintf(path, sizeof(path), "%s/tracker_%s-%s.jsonl",
+                 tracker_dir_.c_str(), label.c_str(), session_ts_.c_str());
+        FILE* fp = fopen(path, "w");
+        if (fp) {
+            tracker_files_[label] = fp;
+            printf("[vive] '%s' → label '%s': %s\n", codename, label.c_str(), path);
+        } else {
+            fprintf(stderr, "[vive] 无法创建 %s\n", path);
+        }
+        return fp;
+    }
+
+    // ── libsurvive 位姿回调 ──
     static void pose_callback(SurviveObject* so, uint64_t timecode,
                               const SurvivePose* pose) {
-        if (!s_instance_ || !s_instance_->fp_) return;
-        if (!so || !pose) return;  // NULL 保护
+        if (!s_instance_ || !so || !pose) return;
         s_instance_->pose_count_++;
 
+        const char* codename = so->codename ? so->codename : "unknown";
+        FILE* fp = s_instance_->get_or_create_tracker_file(codename);
+        if (!fp) return;
+
         uint64_t ts_us = elapsed_us();
-        const char* name = so->codename ? so->codename : "unknown";
-        fprintf(s_instance_->fp_,
+        fprintf(fp,
                 "{\"ts_us\":%llu,\"timecode\":%llu,\"codename\":\"%s\","
                 "\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,"
                 "\"qw\":%.6f,\"qx\":%.6f,\"qy\":%.6f,\"qz\":%.6f}\n",
                 (unsigned long long)ts_us,
                 (unsigned long long)timecode,
-                name,
+                codename,
                 pose->Pos[0], pose->Pos[1], pose->Pos[2],
                 pose->Rot[0], pose->Rot[1], pose->Rot[2], pose->Rot[3]);
 
-        // 每 100 条 flush 一次
         if (s_instance_->pose_count_ % 100 == 0)
-            fflush(s_instance_->fp_);
+            fflush(fp);
     }
 
-    // libsurvive angle 回调 — 单基站即可, 不依赖 disambiguator
+    // ── libsurvive angle 回调 (Gen 1) ──
     static void angle_callback(SurviveObject* so, int sensor_id, int acode,
                                survive_timecode timecode, FLT length,
                                FLT angle, uint32_t lh) {
-        if (!s_instance_ || !s_instance_->fp_angle_) return;
-        if (!so) return;
+        if (!s_instance_ || !so) return;
         s_instance_->angle_count_++;
 
+        const char* cn = so->codename ? so->codename : "unknown";
+        FILE* fp = s_instance_->get_or_create_tracker_file(cn);
+        if (!fp) return;
+
         uint64_t ts_us = elapsed_us();
-        fprintf(s_instance_->fp_angle_,
-                "{\"ts_us\":%llu,\"timecode\":%llu,\"sensor\":%d,\"lh\":%u,"
-                "\"acode\":%d,\"length\":%.6f,\"angle\":%.6f}\n",
+        fprintf(fp,
+                "{\"ts_us\":%llu,\"timecode\":%llu,\"codename\":\"%s\","
+                "\"sensor\":%d,\"lh\":%u,\"acode\":%d,"
+                "\"length\":%.6f,\"angle\":%.6f}\n",
                 (unsigned long long)ts_us,
-                (unsigned long long)timecode,
+                (unsigned long long)timecode, cn,
                 sensor_id, lh, acode, (double)length, (double)angle);
 
         if (s_instance_->angle_count_ % 100 == 0)
-            fflush(s_instance_->fp_angle_);
+            fflush(fp);
     }
 
-    // libsurvive sweep_angle 回调 (Gen 2 base station)
-    static void sweep_angle_cb(SurviveObject* so, survive_channel channel,
-                               int sensor_id, survive_timecode timecode,
-                               int8_t plane, FLT angle) {
-        if (!s_instance_ || !s_instance_->fp_angle_) return;
-        if (!so) return;
-        s_instance_->angle_count_++;
-
-        uint64_t ts_us = elapsed_us();
-        fprintf(s_instance_->fp_angle_,
-                "{\"ts_us\":%llu,\"timecode\":%llu,\"channel\":%d,\"sensor\":%d,"
-                "\"plane\":%d,\"angle\":%.6f}\n",
-                (unsigned long long)ts_us,
-                (unsigned long long)timecode,
-                (int)channel, sensor_id, (int)plane, (double)angle);
-
-        if (s_instance_->angle_count_ % 100 == 0)
-            fflush(s_instance_->fp_angle_);
-    }
-
-    // libsurvive light 回调 — 最底层, 每次 sensor 被 sweep 击中
+    // ── libsurvive light 回调 (最底层 sensor hit 数据) ──
     static void light_callback(SurviveObject* so, int sensor_id, int acode,
                                int timeinsweep, survive_timecode timecode,
                                survive_timecode length, uint32_t lighthouse) {
-        if (!s_instance_ || !s_instance_->fp_angle_) return;
-        if (!so) return;
+        if (!s_instance_ || !so) return;
         s_instance_->light_count_++;
 
+        const char* cn = so->codename ? so->codename : "unknown";
+        FILE* fp = s_instance_->get_or_create_tracker_file(cn);
+        if (!fp) return;
+
         uint64_t ts_us = elapsed_us();
-        fprintf(s_instance_->fp_angle_,
+        fprintf(fp,
                 "{\"type\":\"light\",\"ts_us\":%llu,\"timecode\":%llu,"
-                "\"sensor\":%d,\"lh\":%u,\"acode\":%d,"
+                "\"codename\":\"%s\",\"sensor\":%d,\"lh\":%u,\"acode\":%d,"
                 "\"timeinsweep\":%d,\"length\":%llu}\n",
                 (unsigned long long)ts_us,
-                (unsigned long long)timecode,
+                (unsigned long long)timecode, cn,
                 sensor_id, lighthouse, acode,
                 timeinsweep, (unsigned long long)length);
 
         if (s_instance_->light_count_ % 100 == 0)
-            fflush(s_instance_->fp_angle_);
+            fflush(fp);
     }
+};
+
+// ── Tracker 序列号 → 友好标签 映射表 ──
+//     将你的 VIVE Tracker 序列号填入此处:
+//     LHR-43835B2F → tracker_left
+//     LHR-XXXXXXXX → tracker_right
+//     未匹配的序列号将原样使用作为文件名
+inline std::map<std::string, std::string> ViveTrackerSensor::tracker_labels_ = {
+    // {"T20", "tracker_left"},     // 2-1.1 LHR-43835B2F
+    // {"???", "tracker_right"},    // 2-1.2 LHR-28A417A6
 };

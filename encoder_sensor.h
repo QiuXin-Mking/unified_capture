@@ -20,6 +20,7 @@ public:
                   uint8_t i2c_addr,
                   const std::string& session_dir,
                   int session_num,
+                  const std::string& session_ts,
                   int interval_us,
                   std::atomic<bool>& running)
         : Sensor("as5600", running)
@@ -27,6 +28,7 @@ public:
         , i2c_addr_(i2c_addr)
         , session_dir_(session_dir)
         , session_num_(session_num)
+        , session_ts_(session_ts)
         , interval_us_(interval_us) {}
 
 protected:
@@ -45,8 +47,8 @@ protected:
         }
 
         char path[256];
-        snprintf(path, sizeof(path), "%s/encoder.jsonl",
-                 session_dir_.c_str());
+        snprintf(path, sizeof(path), "%s/encoder-%s.jsonl",
+                 session_dir_.c_str(), session_ts_.c_str());
         fp_ = fopen(path, "w");
 
         printf("[as5600] setup OK (bus=%s, addr=0x%02x, interval=%dus)\n",
@@ -84,6 +86,7 @@ private:
     uint8_t i2c_addr_;
     std::string session_dir_;
     int session_num_;
+    std::string session_ts_;
     int interval_us_;
     as5600_dev_t dev_ = nullptr;
     FILE* fp_ = nullptr;

@@ -17,8 +17,10 @@ extern struct timespec g_t0;
 static inline uint64_t elapsed_us() {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    return (uint64_t)(now.tv_sec - g_t0.tv_sec) * 1000000ULL +
-           (uint64_t)(now.tv_nsec - g_t0.tv_nsec) / 1000ULL;
+    int64_t sec  = (int64_t)(now.tv_sec  - g_t0.tv_sec);
+    int64_t nsec = (int64_t)(now.tv_nsec - g_t0.tv_nsec);
+    if (nsec < 0) { sec--; nsec += 1000000000L; }
+    return (uint64_t)(sec * 1000000LL + nsec / 1000LL);
 }
 
 // ============================================================

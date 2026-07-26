@@ -92,10 +92,12 @@ public:
                  v4l2_dev_sys_data_t& jhh02_dev,
                  const std::string& session_dir,
                  int session_num,
+                 const std::string& session_ts,
                  std::atomic<bool>& running)
         : Sensor("sixcam", running)
         , session_dir_(session_dir)
         , session_num_(session_num)
+        , session_ts_(session_ts)
     {
         ch_[0].name        = jhh04_cfg.name;
         ch_[0].width       = jhh04_cfg.width;
@@ -190,8 +192,8 @@ protected:
             ch.ffmpeg_pid = fork();
             if (ch.ffmpeg_pid < 0) { perror("fork ffmpeg"); return; }
             if (ch.ffmpeg_pid == 0) {
-                snprintf(path, sizeof(path), "%s/%03d.mkv",
-                         ch.out_dir.c_str(), session_num_);
+                snprintf(path, sizeof(path), "%s/%s-%s.mkv",
+                         ch.out_dir.c_str(), ch.name, session_ts_.c_str());
                 char fps_s[16];
                 snprintf(fps_s, sizeof(fps_s), "%d", ch.fps);
                 execlp("ffmpeg", "ffmpeg",
@@ -212,8 +214,8 @@ protected:
         for (int i = 0; i < 2; i++) {
             auto& ch = ch_[i];
             if (!ch.output_y8) continue;
-            snprintf(path, sizeof(path), "%s/%03d.y8",
-                     ch.out_dir.c_str(), session_num_);
+            snprintf(path, sizeof(path), "%s/%s-%s.y8",
+                     ch.out_dir.c_str(), ch.name, session_ts_.c_str());
             ch.y8_fp = fopen(path, "w");
         }
 
@@ -344,6 +346,7 @@ private:
     SixCamChannel ch_[2];
     std::string session_dir_;
     int session_num_;
+    std::string session_ts_;
 
     v4l2_dev_sys_data_t jhh04_dev_;
     v4l2_dev_sys_data_t jhh02_dev_;

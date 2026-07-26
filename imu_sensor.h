@@ -14,6 +14,7 @@ public:
               const std::string& session_dir,
               FrameQueue& queue,
               int session_num,
+              const std::string& session_ts,
               ImuOrientation orientation,
               std::atomic<bool>& running)
         : Sensor(camera_name + "_imu", running)
@@ -21,13 +22,14 @@ public:
         , session_dir_(session_dir)
         , queue_(queue)
         , session_num_(session_num)
+        , session_ts_(session_ts)
         , orientation_(orientation) {}
 
 protected:
     void setup() override {
         char path[256];
-        snprintf(path, sizeof(path), "%s/%s/%03d_imu.jsonl",
-                 session_dir_.c_str(), camera_name_.c_str(), session_num_);
+        snprintf(path, sizeof(path), "%s/%s/%s-%s.jsonl",
+                 session_dir_.c_str(), camera_name_.c_str(), camera_name_.c_str(), session_ts_.c_str());
         fp_ = fopen(path, "w");
     }
 
@@ -67,6 +69,7 @@ private:
     std::string session_dir_;
     FrameQueue& queue_;
     int session_num_;
+    std::string session_ts_;
     ImuOrientation orientation_;
     FILE* fp_ = nullptr;
 };

@@ -44,6 +44,9 @@ static int g_sock_fd = -1;
 static std::atomic<bool> g_ready{false};
 static std::atomic<bool> g_socket_start_request{false};
 static bool g_use_h265 = true;
+static bool g_use_vive = true;
+static bool g_use_imu = true;
+static bool g_use_as5600 = false;
 
 // Preview JPEG export (no extra thread — flags are polled in sensor collect loops)
 std::atomic<bool> g_preview_pending{false};
@@ -252,14 +255,20 @@ static void socket_handle_client(int fd) {
             resp = "{\"ok\":true}";
         }
     } else if (!strcmp(buf, "status")) {
-        if (!g_ready) resp = "{\"ok\":true,\"ready\":false,\"running\":false,\"session\":null,\"elapsed_ms\":0,\"cameras\":{},\"imu\":false,\"as5600\":false,\"vive\":false}";
+        if (!g_ready) {
+            char buf[512]; snprintf(buf, sizeof(buf),
+                "{\"ok\":true,\"ready\":false,\"running\":false,\"session\":null,\"elapsed_ms\":0,\"cameras\":{},\"imu\":%s,\"as5600\":%s,\"vive\":%s}",
+                g_use_imu?"true":"false", g_use_as5600?"true":"false", g_use_vive?"true":"false");
+            resp = buf;
+        }
         else {
             long el = 0;
             if (g_session_running) { struct timespec now; clock_gettime(CLOCK_MONOTONIC, &now);
                 el = (now.tv_sec-g_t0.tv_sec)*1000 + (now.tv_nsec-g_t0.tv_nsec)/1000000; }
             char b[1024]; snprintf(b,sizeof(b),
-                "{\"ok\":true,\"ready\":true,\"running\":%s,\"session\":null,\"elapsed_ms\":%ld,%s,\"imu\":true,\"as5600\":false,\"vive\":false}",
-                g_session_running?"true":"false", el, cameras_json().c_str());
+                "{\"ok\":true,\"ready\":true,\"running\":%s,\"session\":null,\"elapsed_ms\":%ld,%s,\"imu\":%s,\"as5600\":%s,\"vive\":%s}",
+                g_session_running?"true":"false", el, cameras_json().c_str(),
+                g_use_imu?"true":"false", g_use_as5600?"true":"false", g_use_vive?"true":"false");
             resp = b;
         }
     } else {
@@ -289,6 +298,13 @@ static void run_session(const std::string& ses_dir, int session_num,
                         gpiod_line* btn = nullptr) {
     printf("\n>>> Session %d START <<<\n", session_num);
     clock_gettime(CLOCK_MONOTONIC, &g_t0);
+
+    // 生成时间戳字符串: YYYYMMDD-HH_MM_SS
+    time_t now = time(nullptr); struct tm tm; localtime_r(&now, &tm);
+    char ts_buf[64]; snprintf(ts_buf, sizeof(ts_buf), "%04d%02d%02d-%02d_%02d_%02d",
+        tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    std::string session_ts = ts_buf;
+
     std::vector<Sensor*> sensors;
 
     g_jhh2_remaining = 0;
@@ -299,23 +315,23 @@ static void run_session(const std::string& ses_dir, int session_num,
     for (int i = 0; i < N_CAMS; i++) {
         if (!CAMS[i].enabled) continue;
         auto& cam = CAMS[i];
-        auto* vs = new VideoSensor(cam.cfg, ses_dir, *cam.dev_ptr, session_num, g_session_running);
+        auto* vs = new VideoSensor(cam.cfg, ses_dir, *cam.dev_ptr, session_num, session_ts, g_session_running);
         sensors.push_back(vs);
         if (use_imu && cam.cfg.has_imu)
-            sensors.push_back(new ImuSensor(cam.cfg.name, ses_dir, vs->imu_queue(), session_num, cam.cfg.imu_orientation, g_session_running));
+            sensors.push_back(new ImuSensor(cam.cfg.name, ses_dir, vs->imu_queue(), session_num, session_ts, cam.cfg.imu_orientation, g_session_running));
     }
     if (g_sixcam.enabled && g_sixcam.jhh04_dev && g_sixcam.jhh02_dev) {
         CameraConfig j04{"jhh04",SIX_VID,SIX_PID,0,3104,480,30,4000000,30,true,ImuOrientation::HORIZONTAL_TOP,false,true};
         CameraConfig j02{"jhh02",JHH2_VID,JHH2_PID,2,4000,1200,30,16000000,30,true,ImuOrientation::HORIZONTAL_TOP,g_use_h265,true};
-        auto* sc = new SixCamSensor(j04,j02,*g_sixcam.jhh04_dev,*g_sixcam.jhh02_dev,ses_dir,session_num,g_session_running);
+        auto* sc = new SixCamSensor(j04,j02,*g_sixcam.jhh04_dev,*g_sixcam.jhh02_dev,ses_dir,session_num,session_ts,g_session_running);
         sensors.push_back(sc);
         if (use_imu) {
-            sensors.push_back(new ImuSensor("jhh04",ses_dir,sc->imu_queue_jhh04(),session_num,ImuOrientation::HORIZONTAL_TOP,g_session_running));
-            sensors.push_back(new ImuSensor("jhh02",ses_dir,sc->imu_queue_jhh02(),session_num,ImuOrientation::HORIZONTAL_TOP,g_session_running));
+            sensors.push_back(new ImuSensor("jhh04",ses_dir,sc->imu_queue_jhh04(),session_num,session_ts,ImuOrientation::HORIZONTAL_TOP,g_session_running));
+            sensors.push_back(new ImuSensor("jhh02",ses_dir,sc->imu_queue_jhh02(),session_num,session_ts,ImuOrientation::HORIZONTAL_TOP,g_session_running));
         }
     }
-    if (use_as5600) sensors.push_back(new EncoderSensor(ENC_I2C_PATH,ENC_I2C_ADDR,ses_dir,session_num,ENC_INTERVAL_US,g_session_running));
-    if (use_vive) sensors.push_back(new ViveTrackerSensor(ses_dir,session_num,g_session_running));
+    if (use_as5600) sensors.push_back(new EncoderSensor(ENC_I2C_PATH,ENC_I2C_ADDR,ses_dir,session_num,session_ts,ENC_INTERVAL_US,g_session_running));
+    if (use_vive) sensors.push_back(new ViveTrackerSensor(ses_dir,session_num,session_ts,g_session_running));
 
     if (sensors.empty()) { fprintf(stderr,"WARN: no sensors\n"); return; }
 
@@ -377,15 +393,15 @@ int main(int argc, char* argv[]) {
     setlinebuf(stdout);
     setlinebuf(stderr);
 
-    bool use_gpio=true, use_socket=false, use_as5600=true, use_imu=true, use_vive=true, single_shot=false;
+    bool use_gpio=true, use_socket=false, single_shot=false;
+    g_use_as5600 = true; g_use_imu = true; g_use_vive = true;
     std::string prefix;
     for (int i=1;i<argc;i++) {
         if (!strcmp(argv[i],"--scan")) { scan_devices(); return 0; }
         else if (!strcmp(argv[i],"--no-gpio")) use_gpio=false;
         else if (!strcmp(argv[i],"--socket")) { use_socket=true; use_gpio=false; }
-        else if (!strcmp(argv[i],"--no-as5600")) use_as5600=false;
-        else if (!strcmp(argv[i],"--no-imu")) use_imu=false;
-        else if (!strcmp(argv[i],"--no-vive")) use_vive=false;
+        else if (!strcmp(argv[i],"--no-as5600")) g_use_as5600=false;
+        else if (!strcmp(argv[i],"--no-imu")) g_use_imu=false;
         else if (!strcmp(argv[i],"--no-h265")) g_use_h265=false;
         else if (!strcmp(argv[i],"--single")) single_shot=true;
         else if (!strcmp(argv[i],"-h")||!strcmp(argv[i],"--help")) { print_usage(argv[0]); return 0; }
@@ -401,6 +417,17 @@ int main(int argc, char* argv[]) {
 
     int active = resolve_camera_devices();
     if (active <= 0) { fprintf(stderr,"ERROR: No cameras\n"); return 1; }
+
+    // ★ VIVE Tracker 自动检测: 不依赖 --no-vive 开关
+    int vive_count = detect_vive_trackers();
+    if (vive_count <= 0) {
+        g_use_vive = false;
+        printf("[vive] no tracker detected, VIVE disabled\n");
+    } else {
+        g_use_vive = true;
+        printf("[vive] %d tracker(s) detected, VIVE enabled\n", vive_count);
+    }
+
     g_ready = true;
 
     // ★ Socket 在主线程建立 (无额外线程, 避免干扰 TSTC/MPP)
@@ -432,7 +459,7 @@ int main(int argc, char* argv[]) {
             g_session_running = true;
             led_set(1);
             std::string sd = make_session_dir(prefix, session_num);
-            run_session(sd, session_num, use_imu, use_as5600, use_vive, nullptr);
+            run_session(sd, session_num, g_use_imu, g_use_as5600, g_use_vive, nullptr);
             led_set(0);
             if (single_shot) break;  // --single: 跑一次就退出, 让 systemd 重启
         }
@@ -445,7 +472,7 @@ int main(int argc, char* argv[]) {
         printf("Recording... Press Ctrl-C to stop.\n");
         g_session_running = true;
         std::string sd = make_session_dir(prefix, 1);
-        run_session(sd, 1, use_imu, use_as5600, use_vive, nullptr);
+        run_session(sd, 1, g_use_imu, g_use_as5600, g_use_vive, nullptr);
         if (g_sock_fd>=0) { close(g_sock_fd); unlink(SOCK_PATH); }
         return 0;
     }
@@ -466,7 +493,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr,"GPIO unavailable; use socket start or Ctrl-C\n");
         g_session_running = true;
         std::string sd = make_session_dir(prefix, 1);
-        run_session(sd,1,use_imu,use_as5600,use_vive,nullptr);
+        run_session(sd,1,g_use_imu,g_use_as5600,g_use_vive,nullptr);
         if (g_sock_fd>=0) { close(g_sock_fd); unlink(SOCK_PATH); }
         printf("\n=== Exit ===\n");
         return 0;
@@ -508,7 +535,7 @@ int main(int argc, char* argv[]) {
         g_session_running = true;
         led_set(1);
         std::string sd = make_session_dir(prefix, session_num);
-        run_session(sd, session_num, use_imu, use_as5600, use_vive, btn);
+        run_session(sd, session_num, g_use_imu, g_use_as5600, g_use_vive, btn);
         led_set(0);
         if (single_shot) break;
     }

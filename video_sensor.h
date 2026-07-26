@@ -57,12 +57,14 @@ public:
                 const std::string& session_dir,
                 v4l2_dev_sys_data_t& dev_info,
                 int session_num,
+                const std::string& session_ts,
                 std::atomic<bool>& running)
         : Sensor(cfg.name, running)
         , cfg_(cfg)
         , session_dir_(session_dir)
         , dev_info_(dev_info)
-        , session_num_(session_num) {}
+        , session_num_(session_num)
+        , session_ts_(session_ts) {}
 
     ~VideoSensor() override = default;
 
@@ -124,8 +126,8 @@ protected:
             }
             if (ffmpeg_pid_ == 0) {
                 // 子进程: ffmpeg 读 FIFO → MKV
-                snprintf(path, sizeof(path), "%s/%03d.mkv",
-                         out_dir_.c_str(), session_num_);
+                snprintf(path, sizeof(path), "%s/%s-%s.mkv",
+                         out_dir_.c_str(), cfg_.name, session_ts_.c_str());
                 char fps_s[16];
                 snprintf(fps_s, sizeof(fps_s), "%d", cfg_.fps);
                 execlp("ffmpeg", "ffmpeg",
@@ -152,8 +154,8 @@ protected:
 
         // ── 4. Y8 原始灰度文件 ──
         if (cfg_.output_y8) {
-            snprintf(path, sizeof(path), "%s/%03d.y8",
-                     out_dir_.c_str(), session_num_);
+            snprintf(path, sizeof(path), "%s/%s-%s.y8",
+                     out_dir_.c_str(), cfg_.name, session_ts_.c_str());
             y8_fp_ = fopen(path, "w");
             if (!y8_fp_) {
                 fprintf(stderr, "[%s] cannot create Y8 file %s\n", cfg_.name, path);
@@ -435,6 +437,7 @@ private:
     std::string out_dir_;
     v4l2_dev_sys_data_t& dev_info_;
     int session_num_;
+    std::string session_ts_;
 
     // TSTC
     void* tstc_handle_ = nullptr;
