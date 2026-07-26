@@ -29,8 +29,8 @@
 
 #include "USBCam_API.h"
 
-#include "../../bgr2nv12.h"
-#include "../../mpp_encoder.h"
+#include "bgr2nv12.h"
+#include "mpp_encoder.h"
 #include "../../camera_config.h"
 #include "../IMU/imu_decode.h"
 #include "../../frame_queue.h"
@@ -38,6 +38,7 @@
 // 复用 VideoSensor 的全局互斥锁 (定义在 video_sensor.h)
 extern std::mutex g_stream_start_mutex;
 extern std::atomic<int> g_jhh2_remaining;  // jhh04 等待此计数器归零
+extern std::atomic<bool> g_jhh02_init_done;  // jhh02 优先启流完成标志
 
 // Preview JPEG export globals (defined in main.cpp)
 extern std::atomic<bool> g_preview_pending;
@@ -91,10 +92,12 @@ public:
                  v4l2_dev_sys_data_t& jhh02_dev,
                  const std::string& session_dir,
                  int session_num,
+                 const std::string& session_ts,
                  std::atomic<bool>& running)
         : Sensor("sixcam", running)
         , session_dir_(session_dir)
         , session_num_(session_num)
+        , session_ts_(session_ts)
     {
         ch_[0].name        = jhh04_cfg.name;
         ch_[0].width       = jhh04_cfg.width;
@@ -189,8 +192,8 @@ protected:
             ch.ffmpeg_pid = fork();
             if (ch.ffmpeg_pid < 0) { perror("fork ffmpeg"); return; }
             if (ch.ffmpeg_pid == 0) {
-                snprintf(path, sizeof(path), "%s/%03d.mkv",
-                         ch.out_dir.c_str(), session_num_);
+                snprintf(path, sizeof(path), "%s/%s-%s.mkv",
+                         ch.out_dir.c_str(), ch.name, session_ts_.c_str());
                 char fps_s[16];
                 snprintf(fps_s, sizeof(fps_s), "%d", ch.fps);
                 execlp("ffmpeg", "ffmpeg",
@@ -211,8 +214,8 @@ protected:
         for (int i = 0; i < 2; i++) {
             auto& ch = ch_[i];
             if (!ch.output_y8) continue;
-            snprintf(path, sizeof(path), "%s/%03d.y8",
-                     ch.out_dir.c_str(), session_num_);
+            snprintf(path, sizeof(path), "%s/%s-%s.y8",
+                     ch.out_dir.c_str(), ch.name, session_ts_.c_str());
             ch.y8_fp = fopen(path, "w");
         }
 
@@ -232,10 +235,10 @@ protected:
                 }
                 fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
                 pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
-                usleep(200000);
                 fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1) blocking...\n", ch.name);
                 TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
                 fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
+                g_jhh02_init_done = true;  // ★ 通知独立JHH2可以继续
                 int rem = --g_jhh2_remaining;
                 fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", ch.name, rem);
             }
@@ -266,10 +269,10 @@ protected:
                 }
                 fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
                 pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
-                usleep(200000);
                 fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1) blocking...\n", ch.name);
                 TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
                 fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
+                g_jhh02_init_done = true;  // ★ 通知独立JHH2可以继续
             }
             fprintf(stderr, "[%s] DBG: stream_start_mutex released\n", ch.name);
             ch.initialized = true;
@@ -343,6 +346,7 @@ private:
     SixCamChannel ch_[2];
     std::string session_dir_;
     int session_num_;
+    std::string session_ts_;
 
     v4l2_dev_sys_data_t jhh04_dev_;
     v4l2_dev_sys_data_t jhh02_dev_;

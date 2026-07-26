@@ -23,9 +23,9 @@ extern "C" {
 
 #include "camera_config.h"
 #include "sensor.h"
-#include "video_sensor.h"
-#include "sixcam_sensor.h"
-#include "imu_sensor.h"
+#include "hardware/VideoSensor/VideoSensor.h"
+#include "hardware/VideoSensor/SixCamSensor.h"
+#include "hardware/IMU/ImuSensor.h"
 #include "encoder_sensor.h"
 #include "output_path.h"
 #include "vive_usb.h"

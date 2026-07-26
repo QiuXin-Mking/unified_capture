@@ -40,7 +40,7 @@ LIBS     := -L$(TSTC_LIB) -L$(SURVIVE_DIR)/bin \
 TARGET   := unified_capture
 OBJS     := main.o as5600.o
 
-.PHONY: all clean scan
+.PHONY: all clean scan test_hardware_header_layout test_time_utils
 
 all: $(TARGET)
 
@@ -48,9 +48,11 @@ $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
 main.o: main.cpp sensor.h camera_config.h barrier.h time_utils.h output_path.h \
-        video_sensor.h sixcam_sensor.h imu_sensor.h encoder_sensor.h \
+        hardware/VideoSensor/VideoSensor.h hardware/VideoSensor/SixCamSensor.h \
+        hardware/VideoSensor/bgr2nv12.h hardware/VideoSensor/mpp_encoder.h \
+        hardware/IMU/ImuSensor.h hardware/IMU/imu_decode.h encoder_sensor.h \
         hardware/tracker/ViveTrackerSensor.h hardware/tracker/resample_grid.h \
-        mpp_encoder.h frame_queue.h imu_decode.h vive_usb.h as5600.h
+        frame_queue.h vive_usb.h as5600.h
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ main.cpp
 
 as5600.o: as5600.c as5600.h
@@ -64,6 +66,12 @@ clean:
 
 test_output_path: test_output_path.cpp output_path.h
 	$(CXX) $(CXXFLAGS) -o $@ test_output_path.cpp
+
+test_hardware_header_layout:
+	sh tests/test_hardware_header_layout.sh
+
+test_time_utils: test_time_utils.cpp time_utils.h
+	$(CXX) $(CXXFLAGS) -o $@ test_time_utils.cpp
 
 help:
 	@echo "Unified Capture Build"

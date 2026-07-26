@@ -4,6 +4,7 @@
  */
 
 #include <cstdint>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -38,5 +39,10 @@ static inline int mkdir_p(const char* path, mode_t mode) {
             *p = '/';
         }
     }
-    return mkdir(tmp, mode);
+    if (mkdir(tmp, mode) == 0) return 0;
+    if (errno == EEXIST) {
+        struct stat st {};
+        if (stat(tmp, &st) == 0 && S_ISDIR(st.st_mode)) return 0;
+    }
+    return -1;
 }

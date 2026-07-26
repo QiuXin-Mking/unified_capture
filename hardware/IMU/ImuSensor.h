@@ -1,9 +1,6 @@
 #pragma once
 /*
- * ImuSensor.h — 异步 IMU 解码 (从 FrameQueue 消费 BGR 帧, 提取 ICM42688 码带)
- *
- * 目录: hardware/IMU/
- * 依赖: ../../sensor.h, imu_decode.h, ../../frame_queue.h, ../../camera_config.h
+ * imu_sensor.h — ImuSensor: 异步 IMU 解码 (从 FrameQueue 消费 BGR 帧)
  */
 
 #include "../../sensor.h"
@@ -17,6 +14,7 @@ public:
               const std::string& session_dir,
               FrameQueue& queue,
               int session_num,
+              const std::string& session_ts,
               ImuOrientation orientation,
               std::atomic<bool>& running)
         : Sensor(camera_name + "_imu", running)
@@ -24,13 +22,14 @@ public:
         , session_dir_(session_dir)
         , queue_(queue)
         , session_num_(session_num)
+        , session_ts_(session_ts)
         , orientation_(orientation) {}
 
 protected:
     void setup() override {
         char path[256];
-        snprintf(path, sizeof(path), "%s/%s/%03d_imu.jsonl",
-                 session_dir_.c_str(), camera_name_.c_str(), session_num_);
+        snprintf(path, sizeof(path), "%s/%s/%s-%s.jsonl",
+                 session_dir_.c_str(), camera_name_.c_str(), camera_name_.c_str(), session_ts_.c_str());
         fp_ = fopen(path, "w");
     }
 
@@ -42,6 +41,7 @@ protected:
                     uint8_t imu_buf[256] = {};
                     uint32_t imu_len = 0;
 
+                    // 根据码带方向选择扫描策略
                     if (orientation_ == ImuOrientation::HORIZONTAL_TOP) {
                         imu_len = imu_read_frame_horizontal(
                             frame.data.data(), frame.width, frame.height, imu_buf);
@@ -69,6 +69,7 @@ private:
     std::string session_dir_;
     FrameQueue& queue_;
     int session_num_;
+    std::string session_ts_;
     ImuOrientation orientation_;
     FILE* fp_ = nullptr;
 };

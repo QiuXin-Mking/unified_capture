@@ -33,9 +33,9 @@
 // elapsed_us() / g_t0 定义在 sensor.h
 
 // ============================================================
-#include "../../bgr2nv12.h"
+#include "bgr2nv12.h"
 
-#include "../../mpp_encoder.h"
+#include "mpp_encoder.h"
 #include "../../camera_config.h"
 
 // ============================================================
@@ -44,6 +44,7 @@
 // ============================================================
 static std::mutex g_stream_start_mutex;
 extern std::atomic<int> g_jhh2_remaining;  // jhh04 等待此计数器归零
+extern std::atomic<bool> g_jhh02_init_done;  // 独立JHH2等六目jhh02先启流
 
 // Preview JPEG export globals (defined in main.cpp)
 extern std::atomic<bool> g_preview_pending;
@@ -56,12 +57,14 @@ public:
                 const std::string& session_dir,
                 v4l2_dev_sys_data_t& dev_info,
                 int session_num,
+                const std::string& session_ts,
                 std::atomic<bool>& running)
         : Sensor(cfg.name, running)
         , cfg_(cfg)
         , session_dir_(session_dir)
         , dev_info_(dev_info)
-        , session_num_(session_num) {}
+        , session_num_(session_num)
+        , session_ts_(session_ts) {}
 
     ~VideoSensor() override = default;
 
@@ -123,8 +126,8 @@ protected:
             }
             if (ffmpeg_pid_ == 0) {
                 // 子进程: ffmpeg 读 FIFO → MKV
-                snprintf(path, sizeof(path), "%s/%03d.mkv",
-                         out_dir_.c_str(), session_num_);
+                snprintf(path, sizeof(path), "%s/%s-%s.mkv",
+                         out_dir_.c_str(), cfg_.name, session_ts_.c_str());
                 char fps_s[16];
                 snprintf(fps_s, sizeof(fps_s), "%d", cfg_.fps);
                 execlp("ffmpeg", "ffmpeg",
@@ -151,8 +154,8 @@ protected:
 
         // ── 4. Y8 原始灰度文件 ──
         if (cfg_.output_y8) {
-            snprintf(path, sizeof(path), "%s/%03d.y8",
-                     out_dir_.c_str(), session_num_);
+            snprintf(path, sizeof(path), "%s/%s-%s.y8",
+                     out_dir_.c_str(), cfg_.name, session_ts_.c_str());
             y8_fp_ = fopen(path, "w");
             if (!y8_fp_) {
                 fprintf(stderr, "[%s] cannot create Y8 file %s\n", cfg_.name, path);
@@ -161,6 +164,14 @@ protected:
             }
         }
 
+        // ★ 等六目 jhh02 先完成启流 (六目必须最先拿到锁)
+        fprintf(stderr, "[%s] DBG setup: g_jhh02_init_done=%d, waiting...\n",
+                cfg_.name, (int)g_jhh02_init_done);
+        for (int wait_i = 0; wait_i < 500 && !g_jhh02_init_done; wait_i++) {
+            usleep(20000);  // 20ms × 500 = 10s timeout
+        }
+        fprintf(stderr, "[%s] DBG setup: wait done, g_jhh02_init_done=%d\n",
+                cfg_.name, (int)g_jhh02_init_done);
         // ★ 整段上锁: DEAL_WITH_INIT → stream线程 → STREAM_STATUS
         //    同 VID/PID 设备必须完全串行, 否则 SDK 内部状态冲突阻塞
         fprintf(stderr, "[%s] DBG setup: acquiring stream_start_mutex...\n", cfg_.name);
@@ -177,7 +188,6 @@ protected:
 
             fprintf(stderr, "[%s] DBG setup: creating stream thread...\n", cfg_.name);
             pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
-            usleep(200000);
             fprintf(stderr, "[%s] DBG setup: calling STREAM_STATUS(1)...\n", cfg_.name);
             TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
             fprintf(stderr, "[%s] DBG setup: STREAM_STATUS(1) done\n", cfg_.name);
@@ -427,6 +437,7 @@ private:
     std::string out_dir_;
     v4l2_dev_sys_data_t& dev_info_;
     int session_num_;
+    std::string session_ts_;
 
     // TSTC
     void* tstc_handle_ = nullptr;
@@ -464,4 +475,3 @@ private:
         return nullptr;
     }
 };
-
