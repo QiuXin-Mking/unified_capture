@@ -36,6 +36,7 @@ struct timespec g_t0;
 static std::atomic<bool> g_running{true};
 static std::atomic<bool> g_session_running{false};
 std::atomic<int> g_jhh2_remaining{0};
+std::atomic<bool> g_jhh02_init_done{false};
 
 // Socket (单线程, 在主循环中轮询)
 static const char* SOCK_PATH = "/tmp/unified_capture.sock";

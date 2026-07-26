@@ -10,7 +10,7 @@
  * 否则 TSTC SDK 对同 VID/PID 设备的 STREAM_STATUS 会死锁.
  */
 
-#include "sensor.h"
+#include "../../sensor.h"
 
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -29,16 +29,15 @@
 
 #include "USBCam_API.h"
 
-#include "bgr2nv12.h"
-#include "mpp_encoder.h"
-#include "camera_config.h"
-#include "imu_decode.h"
-#include "frame_queue.h"
+#include "../../bgr2nv12.h"
+#include "../../mpp_encoder.h"
+#include "../../camera_config.h"
+#include "../IMU/imu_decode.h"
+#include "../../frame_queue.h"
 
 // 复用 VideoSensor 的全局互斥锁 (定义在 video_sensor.h)
 extern std::mutex g_stream_start_mutex;
 extern std::atomic<int> g_jhh2_remaining;  // jhh04 等待此计数器归零
-extern std::atomic<bool> g_jhh02_init_done;  // jhh02 优先启流完成标志
 
 // Preview JPEG export globals (defined in main.cpp)
 extern std::atomic<bool> g_preview_pending;
@@ -233,10 +232,10 @@ protected:
                 }
                 fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
                 pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
+                usleep(200000);
                 fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1) blocking...\n", ch.name);
                 TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
                 fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
-                g_jhh02_init_done = true;  // ★ 通知独立JHH2可以继续
                 int rem = --g_jhh2_remaining;
                 fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", ch.name, rem);
             }
@@ -267,10 +266,10 @@ protected:
                 }
                 fprintf(stderr, "[%s] DBG: creating stream thread...\n", ch.name);
                 pthread_create(&ch.stream_thread, nullptr, stream_thread_func, &ch);
+                usleep(200000);
                 fprintf(stderr, "[%s] DBG: calling STREAM_STATUS(1) blocking...\n", ch.name);
                 TST_USBCam_Video_STREAM_STATUS(ch.tstc_handle, 1);
                 fprintf(stderr, "[%s] DBG: STREAM_STATUS(1) done\n", ch.name);
-                g_jhh02_init_done = true;  // ★ 通知独立JHH2可以继续
             }
             fprintf(stderr, "[%s] DBG: stream_start_mutex released\n", ch.name);
             ch.initialized = true;
