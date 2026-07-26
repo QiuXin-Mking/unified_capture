@@ -27,7 +27,9 @@ extern "C" {
 #include "sixcam_sensor.h"
 #include "imu_sensor.h"
 #include "encoder_sensor.h"
-#include "vive_tracker.h"
+#include "output_path.h"
+#include "vive_usb.h"
+#include "hardware/tracker/ViveTrackerSensor.h"
 
 // ============================================================
 // 全局状态
@@ -203,13 +205,6 @@ static std::string make_session_dir(const std::string& prefix, int num) {
         snprintf(buf, sizeof(buf), "%s/jhh02", dir.c_str()); mkdir_p(buf, 0755);
     }
     return dir;
-}
-
-static std::string default_prefix() {
-    time_t now = time(nullptr); struct tm tm; localtime_r(&now, &tm);
-    char buf[64]; snprintf(buf, sizeof(buf), "record_%04d%02d%02d_%02d%02d%02d",
-        tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-    return buf;
 }
 
 // ============================================================
@@ -407,7 +402,19 @@ int main(int argc, char* argv[]) {
         else if (!strcmp(argv[i],"-h")||!strcmp(argv[i],"--help")) { print_usage(argv[0]); return 0; }
         else if (argv[i][0]!='-') prefix=argv[i];
     }
-    if (prefix.empty()) prefix = default_prefix();
+    prefix = capture_output_prefix(prefix);
+    if (!is_sd_capture_path(prefix)) {
+        fprintf(stderr, "ERROR: output must be under %s: %s\n", kSdCaptureRoot, prefix.c_str());
+        return 2;
+    }
+    if (!is_sd_card_mounted()) {
+        fprintf(stderr, "ERROR: SD card is not mounted at %s\n", kSdMountPath);
+        return 2;
+    }
+    if (mkdir_p(kSdCaptureRoot, 0755) != 0) {
+        perror(kSdCaptureRoot);
+        return 2;
+    }
 
     // --no-h265: 全局禁用 H.265 编码 (排查用)
     if (!g_use_h265) {

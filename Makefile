@@ -47,8 +47,9 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
-main.o: main.cpp sensor.h camera_config.h barrier.h time_utils.h \
-        video_sensor.h sixcam_sensor.h imu_sensor.h encoder_sensor.h vive_tracker.h \
+main.o: main.cpp sensor.h camera_config.h barrier.h time_utils.h output_path.h \
+        video_sensor.h sixcam_sensor.h imu_sensor.h encoder_sensor.h \
+        hardware/tracker/ViveTrackerSensor.h hardware/tracker/resample_grid.h \
         mpp_encoder.h frame_queue.h imu_decode.h vive_usb.h as5600.h
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ main.cpp
 
@@ -60,6 +61,9 @@ scan: $(TARGET)
 
 clean:
 	rm -f $(TARGET) *.o
+
+test_output_path: test_output_path.cpp output_path.h
+	$(CXX) $(CXXFLAGS) -o $@ test_output_path.cpp
 
 help:
 	@echo "Unified Capture Build"

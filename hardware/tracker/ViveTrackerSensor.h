@@ -1,119 +1,92 @@
 #pragma once
-/*
- * ViveTrackerSensor.h — VIVE Tracker 3.0 位姿采集 + 离线重采样
- *
- * 采集: libsurvive Low-Level API, 全速写入 tracker_raw.jsonl
- * 重采样: 最近邻/线性插值, 固定 Hz 输出, 多设备时间对齐
- *
- * 目录: hardware/tracker/
- * 依赖: sensor.h, vive_usb.h, libsurvive
- */
-
-#include <cstdint>
-#include <string>
-#include <vector>
-#include <unordered_map>
-#include <algorithm>
-#include <cmath>
 
 #include "../../sensor.h"
-#include "../../vive_usb.h"
+#include "resample_grid.h"
 #include "libsurvive/survive.h"
 
-// ============================================================
-// 位姿记录 (缓冲用)
-// ============================================================
-struct PoseRecord {
-    uint64_t timecode;   // libsurvive 48MHz 时间戳
-    char     codename[8];
-    float    x, y, z;
-    float    qw, qx, qy, qz;
-};
+#include <algorithm>
+#include <unordered_map>
 
-// ============================================================
-// 设备位姿序列 (用于重采样)
-// ============================================================
-struct DevicePoseSeries {
-    std::string name;
-    std::vector<PoseRecord> poses;  // 按 timecode 升序
-    uint64_t t_min = UINT64_MAX;
-    uint64_t t_max = 0;
-};
-
-// ============================================================
-// 重采样配置
-// ============================================================
-struct ResampleConfig {
-    double target_hz = 100.0;           // 目标频率
-    bool   enable   = true;             // 是否启用重采样
-    bool   use_interp = false;          // true=线性插值, false=最近邻
-    uint64_t tc_interval = 480000;      // timecode 间隔 (48MHz/100Hz)
-};
-
-// ============================================================
-// ViveTrackerSensor
-// ============================================================
+// Pose-only libsurvive collector. Each tracker is resampled on its own
+// 48 MHz timecode clock; different trackers must never share one grid.
 class ViveTrackerSensor : public Sensor {
 public:
-    ViveTrackerSensor(const std::string& session_dir,
-                      int session_num,
-                      std::atomic<bool>& running,
-                      const ResampleConfig& cfg = ResampleConfig{});
-
-    ~ViveTrackerSensor() override;
+    ViveTrackerSensor(const std::string& session_dir, int,
+                      const std::string&, std::atomic<bool>& running)
+        : Sensor("vive_tracker", running), session_dir_(session_dir) {}
 
 protected:
-    void setup() override;
-    void collect() override;
-    void teardown() override;
+    void setup() override {
+        char path[512];
+        snprintf(path, sizeof(path), "%s/tracker_raw.jsonl", session_dir_.c_str());
+        raw_file_ = fopen(path, "w");
+        if (!raw_file_) { perror(path); return; }
+        char program[] = "vive_tracker";
+        char* argv[] = {program, nullptr};
+        ctx_ = survive_init(1, argv);
+        if (!ctx_) { fprintf(stderr, "[vive] survive_init failed\n"); return; }
+        instance_ = this;
+        survive_install_pose_fn(ctx_, pose_callback);
+        ready_ = true;
+        fprintf(stderr, "[vive] pose-only capture; per-device resample=100Hz\n");
+    }
+
+    void collect() override {
+        while (ready_ && running_) {
+            if (survive_poll(ctx_) != 0) break;
+            usleep(2000);
+        }
+    }
+
+    void teardown() override {
+        if (!records_.empty()) write_resampled();
+        if (raw_file_) { fflush(raw_file_); fclose(raw_file_); raw_file_ = nullptr; }
+        if (ctx_) { survive_close(ctx_); ctx_ = nullptr; }
+        instance_ = nullptr;
+    }
 
 private:
-    // ---- 采集 ----
-    std::string       session_dir_;
-    int               session_num_;
-    SurviveContext*   ctx_ = nullptr;
-    FILE*             fp_raw_ = nullptr;       // tracker_raw.jsonl
-    FILE*             fp_angle_ = nullptr;     // tracker_angle.jsonl
-    std::string       dev_name_;               // sysfs 设备名, 用于回绑
-    uint64_t          pose_count_ = 0;
-    uint64_t          angle_count_ = 0;
-    uint64_t          light_count_ = 0;
-    bool              initialized_ = false;
-    bool              ctx_error_ = false;
+    struct Record { uint64_t timecode, ts_us; float pose[7]; };
+    static constexpr uint64_t k100HzInterval = 480000;
+    std::string session_dir_;
+    SurviveContext* ctx_ = nullptr;
+    FILE* raw_file_ = nullptr;
+    bool ready_ = false;
+    std::unordered_map<std::string, std::vector<Record>> records_;
+    static inline ViveTrackerSensor* instance_ = nullptr;
 
-    // ---- 重采样缓冲 ----
-    ResampleConfig                resample_cfg_;
-    std::vector<PoseRecord>       raw_buffer_;       // 全速原始位姿
-    static constexpr size_t       kBufferReserve = 50000;  // 预分配
+    static void pose_callback(SurviveObject* so, survive_long_timecode tc,
+                              const SurvivePose* pose) {
+        if (!instance_ || !instance_->raw_file_ || !so || !pose) return;
+        const char* name = so->codename ? so->codename : "unknown";
+        const uint64_t ts = elapsed_us();
+        fprintf(instance_->raw_file_, "{\"ts_us\":%llu,\"timecode\":%llu,\"codename\":\"%s\",\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,\"qw\":%.6f,\"qx\":%.6f,\"qy\":%.6f,\"qz\":%.6f}\n", (unsigned long long)ts, (unsigned long long)tc, name, pose->Pos[0], pose->Pos[1], pose->Pos[2], pose->Rot[0], pose->Rot[1], pose->Rot[2], pose->Rot[3]);
+        instance_->records_[name].push_back({tc, ts, {(float)pose->Pos[0], (float)pose->Pos[1], (float)pose->Pos[2], (float)pose->Rot[0], (float)pose->Rot[1], (float)pose->Rot[2], (float)pose->Rot[3]}});
+    }
 
-    // ---- libsurvive 回调 ----
-    static inline ViveTrackerSensor* s_instance_ = nullptr;
+    static const Record& nearest(const std::vector<Record>& rows, uint64_t tc) {
+        auto it = std::lower_bound(rows.begin(), rows.end(), tc, [](const Record& r, uint64_t value) { return r.timecode < value; });
+        if (it == rows.begin()) return *it;
+        if (it == rows.end()) return rows.back();
+        return tc - (it - 1)->timecode <= it->timecode - tc ? *(it - 1) : *it;
+    }
 
-    static void pose_callback(SurviveObject* so, uint64_t timecode,
-                              const SurvivePose* pose);
-    static void angle_callback(SurviveObject* so, int sensor_id, int acode,
-                               survive_timecode timecode, FLT length,
-                               FLT angle, uint32_t lh);
-    static void light_callback(SurviveObject* so, int sensor_id, int acode,
-                               int timeinsweep, survive_timecode timecode,
-                               survive_timecode length, uint32_t lighthouse);
-
-    // ---- 重采样 ----
-    void resample_and_write();
-
-    // 最近邻: 在有序序列中找 timecode 最接近的 pose
-    static const PoseRecord* nearest(const std::vector<PoseRecord>& poses,
-                                     uint64_t target_tc);
-
-    // 线性插值: 在前后两个 pose 之间插值
-    static bool interpolate(const std::vector<PoseRecord>& poses,
-                            uint64_t target_tc,
-                            float out[7]);
-
-    // lerp 辅助
-    static void lerp_pose(const float a[7], const float b[7],
-                          float alpha, float out[7]);
-
-    // 构建设备位姿序列 (分组 + 排序)
-    std::vector<DevicePoseSeries> build_device_series();
+    void write_resampled() {
+        char path[512]; snprintf(path, sizeof(path), "%s/tracker.jsonl", session_dir_.c_str());
+        FILE* output = fopen(path, "w"); if (!output) { perror(path); return; }
+        uint64_t count = 0;
+        for (auto& [name, rows] : records_) {
+            std::sort(rows.begin(), rows.end(), [](const Record& a, const Record& b) { return a.timecode < b.timecode; });
+            if (rows.size() < 2) continue;
+            const uint64_t first = rows.front().timecode, first_ts = rows.front().ts_us;
+            for (uint64_t tc : make_resample_grid(first, rows.back().timecode, k100HzInterval)) {
+                const Record& r = nearest(rows, tc);
+                const uint64_t ts = first_ts + (tc - first) / 48;
+                fprintf(output, "{\"ts_us\":%llu,\"timecode\":%llu,\"codename\":\"%s\",\"method\":\"nearest\",\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,\"qw\":%.6f,\"qx\":%.6f,\"qy\":%.6f,\"qz\":%.6f}\n", (unsigned long long)ts, (unsigned long long)tc, name.c_str(), r.pose[0], r.pose[1], r.pose[2], r.pose[3], r.pose[4], r.pose[5], r.pose[6]);
+                count++;
+            }
+        }
+        fclose(output);
+        fprintf(stderr, "[vive] wrote %llu per-device 100Hz frames: %s\n", (unsigned long long)count, path);
+    }
 };
