@@ -140,10 +140,9 @@ static void scan_devices() {
     Nori_Xvision_UnInit();
 }
 
-struct VidPidGroup { uint16_t vid, pid; std::vector<uint32_t> device_ids; };
+struct DeviceEntry { uint32_t id; uint16_t vid, pid; uint32_t bus; uint32_t dev; };
 
 static int resolve_camera_devices() {
-    // ★ 新 SDK: 全局 Init 枚举所有设备
     uint32_t total_devices = 0;
     uint32_t ret = Nori_Xvision_Init(NORI_USB_DEVICE, &total_devices);
     if (ret != NORI_OK) {
@@ -151,105 +150,72 @@ static int resolve_camera_devices() {
         return 0;
     }
     printf("Nori Xvision SDK: found %u device(s)\n", total_devices);
+    if (total_devices == 0) { Nori_Xvision_UnInit(); return 0; }
 
-    if (total_devices == 0) {
-        Nori_Xvision_UnInit();
-        return 0;
-    }
-
-    // 按 VID/PID 分组所有设备
-    std::vector<VidPidGroup> groups;
+    // 收集所有设备信息 (含 USB 总线号和端口号)
+    std::vector<DeviceEntry> all;
     for (uint32_t i = 0; i < total_devices; i++) {
         DEVICE_INFO info;
         Nori_Xvision_GetDeviceInfo(i, &info);
-
-        VidPidGroup* grp = nullptr;
-        for (auto& g : groups) {
-            if (g.vid == info.idVendor && g.pid == info.idProduct) { grp = &g; break; }
-        }
-        if (!grp) {
-            VidPidGroup g;
-            g.vid = info.idVendor;
-            g.pid = info.idProduct;
-            groups.push_back(g);
-            grp = &groups.back();
-        }
-        grp->device_ids.push_back(i);
-
-        printf("  Device[%u]: %04x:%04x \"%s\" \"%s\" %s\n",
-               i, info.idVendor, info.idProduct,
-               info.iManufacturer, info.iProduct, info.device);
-    }
-
-    // --- 找到 JHH2 (1bcf:2d50) 设备组 ---
-    VidPidGroup* jhh2_grp = nullptr;
-    for (auto& g : groups) {
-        if (g.vid == JHH2_VID && g.pid == JHH2_PID) { jhh2_grp = &g; break; }
+        all.push_back({i, info.idVendor, info.idProduct, info.busnum, info.devnum});
+        printf("  Device[%u]: %04x:%04x bus=%u dev=%u\n",
+               i, info.idVendor, info.idProduct, info.busnum, info.devnum);
     }
 
     int active = 0;
+    uint32_t sixcam_bus = 0;
 
-    // --- 匹配六目模组 jhh04 (1bcf:2d51) ---
-    for (auto& g : groups) {
-        if (g.vid == SIX_VID && g.pid == SIX_PID && !g.device_ids.empty()) {
-            g_sixcam.jhh04_id = g.device_ids[0];
+    // Step 1: 找 jhh04 (1bcf:2d51), 记录其 USB bus 号
+    for (auto& d : all) {
+        if (d.vid == SIX_VID && d.pid == SIX_PID) {
+            g_sixcam.jhh04_id = d.id;
             g_sixcam.enabled = true;
-            DEVICE_INFO info;
-            Nori_Xvision_GetDeviceInfo(g_sixcam.jhh04_id, &info);
-            printf("  %-12s -> device[%u] %s  3104x480@30 IMU=Y (SixCam)\n",
-                   "jhh04", g_sixcam.jhh04_id, info.device);
+            sixcam_bus = d.bus;
+            printf("  %-12s -> device[%u] bus=%u  3104x480@30 IMU=Y (SixCam)\n",
+                   "jhh04", d.id, d.bus);
             active++;
             break;
         }
     }
 
-    // --- 设备分配: SixCam jhh02 优先, 独立 JHH2 使用剩余 ---
-    int jhh2_total = jhh2_grp ? (int)jhh2_grp->device_ids.size() : 0;
-
-    // Step 1: 先分配 SixCam jhh02 (需要第 3 个 2d50, 即 index=2)
-    if (g_sixcam.enabled && jhh2_grp && jhh2_total >= 3) {
-        g_sixcam.jhh02_id = jhh2_grp->device_ids[2];
-        DEVICE_INFO info;
-        Nori_Xvision_GetDeviceInfo(g_sixcam.jhh02_id, &info);
-        printf("  %-12s -> device[%u] %s  4000x1200@30 IMU=Y (SixCam)\n",
-               "jhh02", g_sixcam.jhh02_id, info.device);
-        active++;
-    } else if (g_sixcam.enabled && jhh2_grp && jhh2_total == 2) {
-        // 只有 2 台 2d50: SixCam jhh02 用第 2 台, 独立 JHH2 只用 1 台
-        g_sixcam.jhh02_id = jhh2_grp->device_ids[1];
-        DEVICE_INFO info;
-        Nori_Xvision_GetDeviceInfo(g_sixcam.jhh02_id, &info);
-        printf("  %-12s -> device[%u] %s  4000x1200@30 IMU=Y (SixCam, 2d50x2 mode)\n",
-               "jhh02", g_sixcam.jhh02_id, info.device);
-        active++;
-    } else if (g_sixcam.enabled) {
-        fprintf(stderr, "WARN: jhh02 not found (need >=2 1bcf:2d50 devices, got %d)\n", jhh2_total);
-        g_sixcam.enabled = false;
-        active--;
-    }
-
-    // Step 2: 再分配独立 JHH2 (使用剩余设备)
-    int jhh2_used = (g_sixcam.enabled && g_sixcam.jhh02_id > 0) ? 1 : 0;
-    int jhh2_avail = jhh2_total - jhh2_used;
-    for (int i = 0; i < N_CAMS; i++) {
-        auto& cam = CAMS[i];
-        if (!cam.enabled) continue;
-        if (i < jhh2_avail) {
-            cam.cfg.device_id = jhh2_grp->device_ids[i];
-            DEVICE_INFO info;
-            Nori_Xvision_GetDeviceInfo(cam.cfg.device_id, &info);
-            printf("  %-12s -> device[%u] %s  %dx%d@%d IMU=%c\n",
-                   cam.cfg.name, cam.cfg.device_id, info.device,
-                   cam.cfg.width, cam.cfg.height, cam.cfg.fps,
-                   cam.cfg.has_imu ? 'Y' : 'N');
-        } else {
-            cam.enabled = false;
-            printf("  %-12s -> disabled (not enough 2d50 devices)\n", cam.cfg.name);
+    // Step 2: jhh02 = 与 jhh04 同 bus 的 2d50
+    if (g_sixcam.enabled && sixcam_bus > 0) {
+        for (auto& d : all) {
+            if (d.vid == JHH2_VID && d.pid == JHH2_PID && d.bus == sixcam_bus) {
+                g_sixcam.jhh02_id = d.id;
+                printf("  %-12s -> device[%u] bus=%u  4000x1200@30 IMU=Y (SixCam)\n",
+                       "jhh02", d.id, d.bus);
+                active++;
+                break;
+            }
+        }
+        if (!g_sixcam.jhh02_id) {
+            fprintf(stderr, "WARN: jhh02 not found on SixCam bus %u\n", sixcam_bus);
+            g_sixcam.enabled = false; active--;
         }
     }
 
-    for (int i = 0; i < N_CAMS; i++) if (CAMS[i].enabled && CAMS[i].cfg.device_id >= 0) active++;
+    // Step 3: 独立 JHH2 = 不在 SixCam bus 上的 2d50 (按找到顺序分配)
+    int jhh2_idx = 0;
+    for (auto& d : all) {
+        if (d.vid != JHH2_VID || d.pid != JHH2_PID) continue;
+        if (d.bus == sixcam_bus) continue;  // 跳过 SixCam 的 jhh02
+        if (jhh2_idx >= N_CAMS) break;
+        auto& cam = CAMS[jhh2_idx];
+        cam.cfg.device_id = d.id;
+        cam.enabled = true;
+        printf("  %-12s -> device[%u] bus=%u  %dx%d@%d IMU=%c\n",
+               cam.cfg.name, d.id, d.bus,
+               cam.cfg.width, cam.cfg.height, cam.cfg.fps,
+               cam.cfg.has_imu ? 'Y' : 'N');
+        jhh2_idx++;
+    }
+    for (int i = jhh2_idx; i < N_CAMS; i++) {
+        CAMS[i].enabled = false;
+        printf("  %-12s -> disabled (no free 2d50 on other buses)\n", CAMS[i].cfg.name);
+    }
 
+    for (int i = 0; i < N_CAMS; i++) if (CAMS[i].enabled && CAMS[i].cfg.device_id >= 0) active++;
     return active;
 }
 
