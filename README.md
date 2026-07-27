@@ -158,7 +158,7 @@ main (单线程 poll)
 | `bgr2nv12.h` | BGR → NV12 色彩转换 |
 | `imu_decode.h` | IMU 码带解码算法 |
 | `vive_usb.h` | VIVE USB HID 协议 |
-| `as5600.c/h` | AS5600 I2C 驱动 |
+| `hardware/as5600/as5600.c/h` | AS5600 I2C 驱动 |
 | `BUG_PTHREAD_SOCKET.md` | pthread socket 致 MPP 崩溃根因分析 |
 | `SOCKET_CONTROL.md` | Socket 控制协议详细文档 |
 | `unified_capture.service` | systemd unit 文件 |

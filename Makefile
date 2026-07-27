@@ -38,7 +38,7 @@ LIBS     := -L$(TSTC_LIB) -L$(SURVIVE_DIR)/bin \
 	$(LDFLAGS)
 
 TARGET   := unified_capture
-OBJS     := main.o as5600.o
+OBJS     := main.o hardware/as5600/as5600.o
 
 .PHONY: all clean scan test_hardware_header_layout test_time_utils
 
@@ -52,17 +52,17 @@ main.o: main.cpp sensor.h camera_config.h barrier.h time_utils.h output_path.h \
         hardware/VideoSensor/bgr2nv12.h hardware/VideoSensor/mpp_encoder.h \
         hardware/IMU/ImuSensor.h hardware/IMU/imu_decode.h encoder_sensor.h \
         hardware/tracker/ViveTrackerSensor.h hardware/tracker/resample_grid.h \
-        frame_queue.h vive_usb.h as5600.h
+        frame_queue.h vive_usb.h hardware/as5600/as5600.h
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ main.cpp
 
-as5600.o: as5600.c as5600.h
-	$(CC) $(CFLAGS) $(INCLUDES) -c -o $@ as5600.c
+hardware/as5600/as5600.o: hardware/as5600/as5600.c hardware/as5600/as5600.h
+	$(CC) $(CFLAGS) $(INCLUDES) -c -o $@ hardware/as5600/as5600.c
 
 scan: $(TARGET)
 	./$(TARGET) --scan
 
 clean:
-	rm -f $(TARGET) *.o
+	rm -f $(TARGET) $(OBJS)
 
 test_output_path: test_output_path.cpp output_path.h
 	$(CXX) $(CXXFLAGS) -o $@ test_output_path.cpp

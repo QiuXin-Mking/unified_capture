@@ -26,7 +26,7 @@ link_directories(
 # ---- 源文件 ----
 add_executable(unified_capture
     main.cpp
-    as5600.c
+    hardware/as5600/as5600.c
 )
 
 # ---- 链接库 ----

@@ -2,14 +2,14 @@
 /*
  * encoder_sensor.h — AS5600Sensor: 磁编码器 I2C 读取
  *
- * 通过 extern "C" 调用现有 as5600.c 驱动.
+ * 通过 extern "C" 调用 hardware/as5600 下的驱动.
  * 采样间隔 10ms (100Hz), 输出 CSV 带 CLOCK_MONOTONIC 时间戳.
  */
 
 #include "sensor.h"
 
 extern "C" {
-#include "as5600.h"
+#include "hardware/as5600/as5600.h"
 }
 
 // elapsed_us() / g_t0 定义在 sensor.h

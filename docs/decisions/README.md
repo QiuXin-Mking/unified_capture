@@ -25,7 +25,9 @@
 
 | 日期 | 决策 | 状态 |
 |------|------|------|
+| 2026-07-20 | [IMU 采用异步离线解码](2026-07-20-imu-asynchronous-decoding.md) | 已弃用 |
 | 2026-07-23 | [摄像头按阶段接入并设置验证门禁](2026-07-23-staged-camera-validation.md) | 已采纳 |
+| 2026-07-23 | [采集视频使用 MKV 容器](2026-07-23-use-mkv-for-capture-video.md) | 已采纳 |
 | 2026-07-25 | [使用单 Session 进程隔离 TSTC SDK 状态](2026-07-25-multi-session-process-isolation.md) | 已采纳 |
 | 2026-07-26 | [在采集循环内同步生成预览 JPEG](2026-07-26-preview-jpeg-in-collect-loop.md) | 已采纳 |
 | 2026-07-26 | [由 device-ui 后端承担采集协议适配](2026-07-26-device-ui-adaptation-boundary.md) | 已采纳 |
