@@ -39,7 +39,7 @@ LIBS     := -L$(NORI_LIB) -L$(SURVIVE_DIR)/bin \
 	$(LDFLAGS)
 
 TARGET   := unified_capture
-OBJS     := main.o hardware/as5600/as5600.o
+OBJS     := main.o hardware/common/sensor.o hardware/as5600/as5600.o
 
 .PHONY: all clean scan test_hardware_header_layout test_time_utils
 
@@ -48,13 +48,16 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
-main.o: main.cpp sensor.h camera_config.h barrier.h time_utils.h output_path.h \
+main.o: main.cpp hardware/common/sensor.h camera_config.h barrier.h time_utils.h output_path.h \
         hardware/VideoSensor/VideoSensor.h hardware/VideoSensor/SixCamSensor.h \
         hardware/VideoSensor/bgr2nv12.h hardware/VideoSensor/mpp_encoder.h \
         hardware/IMU/ImuSensor.h hardware/IMU/imu_decode.h hardware/as5600/encoder_sensor.h \
         hardware/tracker/ViveTrackerSensor.h hardware/tracker/resample_grid.h \
         frame_queue.h vive_usb.h hardware/as5600/as5600.h
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ main.cpp
+
+hardware/common/sensor.o: hardware/common/sensor.cpp hardware/common/sensor.h barrier.h time_utils.h
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ hardware/common/sensor.cpp
 
 hardware/as5600/as5600.o: hardware/as5600/as5600.c hardware/as5600/as5600.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c -o $@ hardware/as5600/as5600.c

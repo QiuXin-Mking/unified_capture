@@ -10,7 +10,7 @@
  *   - FrameQueue: BGR 帧 → ImuSensor 异步消费
  */
 
-#include "../../sensor.h"
+#include "../common/sensor.h"
 
 #include <sys/stat.h>
 #include <sys/wait.h>

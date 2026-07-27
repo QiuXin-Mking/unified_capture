@@ -9,7 +9,7 @@
  * 启流顺序: jhh02 必须优先于 jhh04 (IMU 硬件依赖)
  */
 
-#include "../../sensor.h"
+#include "../common/sensor.h"
 
 #include <sys/stat.h>
 #include <sys/wait.h>

@@ -22,7 +22,8 @@ extern "C" {
 }
 
 #include "camera_config.h"
-#include "sensor.h"
+#include "barrier.h"
+#include "hardware/common/sensor.h"
 #include "hardware/VideoSensor/VideoSensor.h"
 #include "hardware/VideoSensor/SixCamSensor.h"
 #include "hardware/IMU/ImuSensor.h"

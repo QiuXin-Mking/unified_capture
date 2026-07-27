@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../sensor.h"
+#include "../common/sensor.h"
 #include "resample_grid.h"
 #include "libsurvive/survive.h"
 
