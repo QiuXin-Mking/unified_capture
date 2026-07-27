@@ -344,9 +344,15 @@ static void run_session(const std::string& ses_dir, int session_num,
     std::vector<Sensor*> sensors;
 
     g_jhh2_remaining = 0;
+    g_jhh02_init_done = false;  // ★ 每 session 重置
     for (int i = 0; i < N_CAMS; i++)
         if (CAMS[i].enabled && CAMS[i].cfg.vid==JHH2_VID && CAMS[i].cfg.pid==JHH2_PID) g_jhh2_remaining++;
     if (g_sixcam.enabled && g_sixcam.jhh02_id) g_jhh2_remaining++;
+
+    // 如果 SixCam 未启用(无 jhh02), JHH2 独立相机不需要等待 IMU 主通道
+    if (!g_sixcam.enabled || !g_sixcam.jhh02_id) {
+        g_jhh02_init_done = true;
+    }
 
     for (int i = 0; i < N_CAMS; i++) {
         if (!CAMS[i].enabled) continue;
