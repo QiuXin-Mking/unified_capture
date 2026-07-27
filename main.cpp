@@ -18,7 +18,7 @@
 #include <vector>
 
 extern "C" {
-#include "USBCam_API.h"
+#include "Nori_Xvision_API.h"
 }
 
 #include "camera_config.h"
@@ -76,18 +76,17 @@ static void sig_handler(int sig) {
 struct CamEntry {
     CameraConfig cfg;
     bool enabled = true;
-    v4l2_dev_sys_data_t* dev_ptr = nullptr;
 };
 
 static CamEntry CAMS[] = {
-{{"jhh2_left",  JHH2_VID, JHH2_PID, 0, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
-{{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true},  true, nullptr},
+{{"jhh2_left",  JHH2_VID, JHH2_PID, 0, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true, -1},  true},
+{{"jhh2_right", JHH2_VID, JHH2_PID, 1, 3840, 1200, 30, 16000000, 30, true,  ImuOrientation::HORIZONTAL_TOP, true,  true, -1},  true},
 };
 
 struct SixCamEntry {
     bool enabled = true;
-    v4l2_dev_sys_data_t* jhh04_dev = nullptr;
-    v4l2_dev_sys_data_t* jhh02_dev = nullptr;
+    uint32_t jhh04_id = 0;
+    uint32_t jhh02_id = 0;
 };
 static SixCamEntry g_sixcam;
 static const int N_CAMS = sizeof(CAMS) / sizeof(CAMS[0]);
@@ -119,76 +118,117 @@ static void led_disable_trigger() {
 
 // ============================================================
 static void scan_devices() {
-    {
-        v4l2_dev_sys_data_t* devs = nullptr;
-        int n = TST_USBCam_DEVICE_FIND_ID(&devs, JHH2_VID, JHH2_PID);
-        printf("JHH2 组 [%04x:%04x]: %d device(s)\n", JHH2_VID, JHH2_PID, n);
-        for (int i = 0; i < n; i++)
-            printf("  [group:%d] %s %s  (%s)\n", i, devs[i].iManufacturer, devs[i].iProduct, devs[i].Device_Path);
+    uint32_t count = 0;
+    uint32_t ret = Nori_Xvision_Init(NORI_USB_DEVICE, &count);
+    if (ret != NORI_OK) {
+        printf("Nori_Xvision_Init failed: 0x%x\n", ret);
+        return;
     }
-    {
-        v4l2_dev_sys_data_t* devs = nullptr;
-        int n = TST_USBCam_DEVICE_FIND_ID(&devs, SIX_VID, SIX_PID);
-        printf("六目组 [%04x:%04x]: %d device(s)\n", SIX_VID, SIX_PID, n);
-        for (int i = 0; i < n; i++)
-            printf("  [group:%d] %s %s  (%s)\n", i, devs[i].iManufacturer, devs[i].iProduct, devs[i].Device_Path);
+    printf("Found %u device(s):\n", count);
+    for (uint32_t i = 0; i < count; i++) {
+        DEVICE_INFO info;
+        Nori_Xvision_GetDeviceInfo(i, &info);
+        printf("  [%u] %04x:%04x \"%s\" \"%s\" %s\n",
+               i, info.idVendor, info.idProduct,
+               info.iManufacturer, info.iProduct, info.device);
+        VERSION_INFO ver;
+        if (Nori_Xvision_GetVersion(i, &ver) == NORI_OK) {
+            printf("       SDK:%s  Type:%s\n", ver.SDKVersion, ver.DeviceType);
+        }
     }
+    Nori_Xvision_UnInit();
 }
 
-struct VidPidGroup { uint16_t vid, pid; v4l2_dev_sys_data_t* devs; int count; };
+struct VidPidGroup { uint16_t vid, pid; std::vector<uint32_t> device_ids; };
 
 static int resolve_camera_devices() {
+    // ★ 新 SDK: 全局 Init 枚举所有设备
+    uint32_t total_devices = 0;
+    uint32_t ret = Nori_Xvision_Init(NORI_USB_DEVICE, &total_devices);
+    if (ret != NORI_OK) {
+        fprintf(stderr, "ERROR: Nori_Xvision_Init failed: 0x%x\n", ret);
+        return 0;
+    }
+    printf("Nori Xvision SDK: found %u device(s)\n", total_devices);
+
+    if (total_devices == 0) {
+        Nori_Xvision_UnInit();
+        return 0;
+    }
+
+    // 按 VID/PID 分组所有设备
     std::vector<VidPidGroup> groups;
-    for (int i = 0; i < N_CAMS; i++) {
-        auto& cam = CAMS[i];
-        if (!cam.enabled) continue;
-        uint16_t vid = cam.cfg.vid, pid = cam.cfg.pid;
+    for (uint32_t i = 0; i < total_devices; i++) {
+        DEVICE_INFO info;
+        Nori_Xvision_GetDeviceInfo(i, &info);
+
         VidPidGroup* grp = nullptr;
-        for (auto& g : groups) { if (g.vid == vid && g.pid == pid) { grp = &g; break; } }
+        for (auto& g : groups) {
+            if (g.vid == info.idVendor && g.pid == info.idProduct) { grp = &g; break; }
+        }
         if (!grp) {
-            VidPidGroup g; g.vid = vid; g.pid = pid;
-            g.count = TST_USBCam_DEVICE_FIND_ID(&g.devs, vid, pid);
-            groups.push_back(g); grp = &groups.back();
+            VidPidGroup g;
+            g.vid = info.idVendor;
+            g.pid = info.idProduct;
+            groups.push_back(g);
+            grp = &groups.back();
         }
-        int order = cam.cfg.group_order;
-        if (order >= grp->count) {
-            cam.enabled = false; cam.dev_ptr = nullptr;
-            fprintf(stderr, "WARN: %s [%04x:%04x order=%d] not found\n", cam.cfg.name, vid, pid, order);
-            continue;
-        }
-        cam.dev_ptr = &grp->devs[order];
-        printf("  %-12s -> [%04x:%04x group:%d] %s  %dx%d@%d IMU=%c\n",
-               cam.cfg.name, vid, pid, order, cam.dev_ptr->Device_Path,
-               cam.cfg.width, cam.cfg.height, cam.cfg.fps, cam.cfg.has_imu ? 'Y' : 'N');
+        grp->device_ids.push_back(i);
+
+        printf("  Device[%u]: %04x:%04x \"%s\" \"%s\" %s\n",
+               i, info.idVendor, info.idProduct,
+               info.iManufacturer, info.iProduct, info.device);
     }
+
+    // 匹配 JHH2 独立相机 (1bcf:2d50, 取前 2 个)
+    VidPidGroup* jhh2_grp = nullptr;
+    for (auto& g : groups) {
+        if (g.vid == JHH2_VID && g.pid == JHH2_PID) { jhh2_grp = &g; break; }
+    }
+    if (jhh2_grp) {
+        for (int i = 0; i < N_CAMS && i < (int)jhh2_grp->device_ids.size(); i++) {
+            auto& cam = CAMS[i];
+            if (!cam.enabled) continue;
+            cam.cfg.device_id = jhh2_grp->device_ids[i];
+            DEVICE_INFO info;
+            Nori_Xvision_GetDeviceInfo(cam.cfg.device_id, &info);
+            printf("  %-12s -> device[%u] %s  %dx%d@%d IMU=%c\n",
+                   cam.cfg.name, cam.cfg.device_id, info.device,
+                   cam.cfg.width, cam.cfg.height, cam.cfg.fps,
+                   cam.cfg.has_imu ? 'Y' : 'N');
+        }
+    }
+
     int active = 0;
-    for (int i = 0; i < N_CAMS; i++) if (CAMS[i].enabled) active++;
+    for (int i = 0; i < N_CAMS; i++) if (CAMS[i].enabled && CAMS[i].cfg.device_id >= 0) active++;
 
-    {
-        v4l2_dev_sys_data_t* six_devs = nullptr;
-        int six_n = TST_USBCam_DEVICE_FIND_ID(&six_devs, SIX_VID, SIX_PID);
-        if (six_n > 0) {
-            g_sixcam.jhh04_dev = &six_devs[0]; g_sixcam.enabled = true;
-            printf("  %-12s -> [%04x:%04x group:0] %s  3104x480@30 IMU=Y (SixCam)\n",
-                   "jhh04", SIX_VID, SIX_PID, g_sixcam.jhh04_dev->Device_Path);
+    // 匹配六目模组 jhh04 (1bcf:2d51)
+    for (auto& g : groups) {
+        if (g.vid == SIX_VID && g.pid == SIX_PID && !g.device_ids.empty()) {
+            g_sixcam.jhh04_id = g.device_ids[0];
+            g_sixcam.enabled = true;
+            DEVICE_INFO info;
+            Nori_Xvision_GetDeviceInfo(g_sixcam.jhh04_id, &info);
+            printf("  %-12s -> device[%u] %s  3104x480@30 IMU=Y (SixCam)\n",
+                   "jhh04", g_sixcam.jhh04_id, info.device);
             active++;
-        } else { g_sixcam.enabled = false; }
-
-        VidPidGroup* jhh2_grp = nullptr;
-        for (auto& g : groups) { if (g.vid == JHH2_VID && g.pid == JHH2_PID) { jhh2_grp = &g; break; } }
-        if (!jhh2_grp) {
-            VidPidGroup g; g.vid = JHH2_VID; g.pid = JHH2_PID;
-            g.count = TST_USBCam_DEVICE_FIND_ID(&g.devs, JHH2_VID, JHH2_PID);
-            groups.push_back(g); jhh2_grp = &groups.back();
-        }
-        if (g_sixcam.enabled && jhh2_grp->count >= 3) {
-            g_sixcam.jhh02_dev = &jhh2_grp->devs[2];
-            printf("  %-12s -> [%04x:%04x group:2] %s  3104x480@30 IMU=Y (SixCam)\n",
-                   "jhh02", JHH2_VID, JHH2_PID, g_sixcam.jhh02_dev->Device_Path);
-        } else if (g_sixcam.enabled) {
-            fprintf(stderr, "WARN: jhh02 not found\n"); g_sixcam.jhh02_dev = nullptr;
+            break;
         }
     }
+
+    // jhh02 (六目双目侧): 从 jhh2_grp 中取 group_order=2
+    if (g_sixcam.enabled && jhh2_grp && jhh2_grp->device_ids.size() >= 3) {
+        g_sixcam.jhh02_id = jhh2_grp->device_ids[2];
+        DEVICE_INFO info;
+        Nori_Xvision_GetDeviceInfo(g_sixcam.jhh02_id, &info);
+        printf("  %-12s -> device[%u] %s  4000x1200@30 IMU=Y (SixCam)\n",
+               "jhh02", g_sixcam.jhh02_id, info.device);
+    } else if (g_sixcam.enabled) {
+        fprintf(stderr, "WARN: jhh02 not found (need 3+ 1bcf:2d50 devices)\n");
+        g_sixcam.enabled = false;
+        active--;
+    }
+
     return active;
 }
 
@@ -218,8 +258,8 @@ static std::string cameras_json() {
         first = false;
     }
     if (g_sixcam.enabled) {
-        s += ",\"jhh04\":" + std::string(g_sixcam.jhh04_dev ? "true" : "false");
-        s += ",\"jhh02\":" + std::string(g_sixcam.jhh02_dev ? "true" : "false");
+        s += ",\"jhh04\":" + std::string(g_sixcam.jhh04_id > 0 ? "true" : "false");
+        s += ",\"jhh02\":" + std::string(g_sixcam.jhh02_id > 0 ? "true" : "false");
     }
     s += "}"; return s;
 }
@@ -305,20 +345,20 @@ static void run_session(const std::string& ses_dir, int session_num,
     g_jhh2_remaining = 0;
     for (int i = 0; i < N_CAMS; i++)
         if (CAMS[i].enabled && CAMS[i].cfg.vid==JHH2_VID && CAMS[i].cfg.pid==JHH2_PID) g_jhh2_remaining++;
-    if (g_sixcam.enabled && g_sixcam.jhh02_dev) g_jhh2_remaining++;
+    if (g_sixcam.enabled && g_sixcam.jhh02_id) g_jhh2_remaining++;
 
     for (int i = 0; i < N_CAMS; i++) {
         if (!CAMS[i].enabled) continue;
         auto& cam = CAMS[i];
-        auto* vs = new VideoSensor(cam.cfg, ses_dir, *cam.dev_ptr, session_num, session_ts, g_session_running);
+        auto* vs = new VideoSensor(cam.cfg, ses_dir, (uint32_t)cam.cfg.device_id, session_num, session_ts, g_session_running);
         sensors.push_back(vs);
         if (use_imu && cam.cfg.has_imu)
             sensors.push_back(new ImuSensor(cam.cfg.name, ses_dir, vs->imu_queue(), session_num, session_ts, cam.cfg.imu_orientation, g_session_running));
     }
-    if (g_sixcam.enabled && g_sixcam.jhh04_dev && g_sixcam.jhh02_dev) {
-        CameraConfig j04{"jhh04",SIX_VID,SIX_PID,0,3104,480,30,4000000,30,true,ImuOrientation::HORIZONTAL_TOP,false,true};
-        CameraConfig j02{"jhh02",JHH2_VID,JHH2_PID,2,4000,1200,30,16000000,30,true,ImuOrientation::HORIZONTAL_TOP,g_use_h265,true};
-        auto* sc = new SixCamSensor(j04,j02,*g_sixcam.jhh04_dev,*g_sixcam.jhh02_dev,ses_dir,session_num,session_ts,g_session_running);
+    if (g_sixcam.enabled && g_sixcam.jhh04_id > 0 && g_sixcam.jhh02_id > 0) {
+        CameraConfig j04{"jhh04",SIX_VID,SIX_PID,0,3104,480,30,4000000,30,true,ImuOrientation::HORIZONTAL_TOP,false,true,-1};
+        CameraConfig j02{"jhh02",JHH2_VID,JHH2_PID,2,4000,1200,30,16000000,30,true,ImuOrientation::HORIZONTAL_TOP,g_use_h265,true,-1};
+        auto* sc = new SixCamSensor(j04,j02,g_sixcam.jhh04_id,g_sixcam.jhh02_id,ses_dir,session_num,session_ts,g_session_running);
         sensors.push_back(sc);
         if (use_imu) {
             sensors.push_back(new ImuSensor("jhh04",ses_dir,sc->imu_queue_jhh04(),session_num,session_ts,ImuOrientation::HORIZONTAL_TOP,g_session_running));
@@ -471,6 +511,7 @@ int main(int argc, char* argv[]) {
             if (single_shot) break;  // --single: 跑一次就退出, 让 systemd 重启
         }
         if (g_sock_fd>=0) { close(g_sock_fd); unlink(SOCK_PATH); }
+        Nori_Xvision_UnInit();
         return 0;
     }
 
@@ -481,6 +522,7 @@ int main(int argc, char* argv[]) {
         std::string sd = make_session_dir(prefix, 1);
         run_session(sd, 1, g_use_imu, g_use_as5600, g_use_vive, nullptr);
         if (g_sock_fd>=0) { close(g_sock_fd); unlink(SOCK_PATH); }
+        Nori_Xvision_UnInit();
         return 0;
     }
 
@@ -550,6 +592,7 @@ int main(int argc, char* argv[]) {
     if (btn) gpiod_line_release(btn);
     if (chip) gpiod_chip_close(chip);
     if (g_sock_fd >= 0) { close(g_sock_fd); unlink(SOCK_PATH); }
+    Nori_Xvision_UnInit();
     printf("\n=== Exit ===\n");
     return 0;
 }

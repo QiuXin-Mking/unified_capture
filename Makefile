@@ -6,7 +6,7 @@
 #   make scan           # 扫描设备
 #
 # 编译前确认:
-#   1. TSTC SDK 已安装, USBCam_API.h 在 include 路径中
+#   1. Nori Xvision SDK 已安装, Nori_Xvision_API.h 在 include 路径中
 #   2. Rockchip MPP 已安装
 #   3. libturbojpeg-dev, libgpiod-dev 已安装
 
@@ -14,18 +14,18 @@ CXX      ?= g++
 CC       ?= gcc
 CXXFLAGS := -std=c++20 -Wall -g -O2 -pthread
 CFLAGS   := -std=gnu11 -Wall -g -O2
-LDFLAGS  := -lUSBCam_API -lrockchip_mpp -lturbojpeg -lgpiod -lsurvive -lpthread -lrt -ludev -lm
+LDFLAGS  := -lNori_Xvision_Std -lrockchip_mpp -lturbojpeg -lgpiod -lsurvive -lpthread -lrt -ludev -lm
 
-# TSTC SDK 路径 (按需调整)
-TSTC_INC ?= /usr/local/TSTC/include
-TSTC_LIB ?= /usr/local/TSTC/lib
+# Nori Xvision SDK 路径 (按需调整)
+NORI_INC ?= /usr/local/Nori_Xvision/include
+NORI_LIB ?= /usr/local/Nori_Xvision/lib
 MPP_INC  ?= /usr/include/rockchip
 
 # libsurvive 路径
 SURVIVE_DIR ?= /root/projects/libsurvive
 
 INCLUDES := -I. \
-	-I$(TSTC_INC)/USBCam_API \
+	-I$(NORI_INC)/Nori_Xvision_API \
 	-I$(MPP_INC) \
 	-I$(SURVIVE_DIR)/include/libsurvive \
 	-I$(SURVIVE_DIR)/include \
@@ -33,8 +33,9 @@ INCLUDES := -I. \
 	-I$(SURVIVE_DIR)/libs/cnmatrix/include \
 	-I$(SURVIVE_DIR)/libs/cnkalman/src
 
-LIBS     := -L$(TSTC_LIB) -L$(SURVIVE_DIR)/bin \
-	-Wl,-rpath,$(SURVIVE_DIR)/bin \
+LIBS     := -L$(NORI_LIB) -L$(SURVIVE_DIR)/bin \
+	-Wl,-rpath,$(NORI_LIB) \
+		-Wl,-rpath,$(SURVIVE_DIR)/bin \
 	$(LDFLAGS)
 
 TARGET   := unified_capture
@@ -78,12 +79,12 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  make        Build $(TARGET)"
-	@echo "  make scan   Build and scan TSTC devices"
+	@echo "  make scan   Build and scan Nori devices"
 	@echo "  make clean  Remove build artifacts"
 	@echo ""
 	@echo "Variables:"
-	@echo "  TSTC_INC   TSTC SDK header path (default: /usr/local/TSTC/include)"
-	@echo "  TSTC_LIB   TSTC SDK lib path (default: /usr/local/TSTC/lib)"
+	@echo "  Nori_INC   Nori SDK header path (default: /usr/local/Nori/include)"
+	@echo "  Nori_LIB   Nori SDK lib path (default: /usr/local/Nori/lib)"
 	@echo "  MPP_INC    Rockchip MPP header path (default: /usr/include/rockchip)"
 	@echo ""
 	@echo "Build on RK3588:"
@@ -91,4 +92,4 @@ help:
 	@echo ""
 	@echo "Cross-compile:"
 	@echo "  make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \\"
-	@echo "       TSTC_INC=/path/to/tstc/include TSTC_LIB=/path/to/tstc/lib"
+	@echo "       Nori_INC=/path/to/tstc/include Nori_LIB=/path/to/tstc/lib"

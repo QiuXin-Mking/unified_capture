@@ -1,9 +1,9 @@
 #pragma once
 /*
- * video_sensor.h — VideoSensor: TSTC SDK 采集 + MPP H.265 编码 + FFmpeg MKV 封装
+ * video_sensor.h — VideoSensor: Nori Xvision SDK 采集 + MPP H.265 编码 + FFmpeg MKV 封装
  *
  * 每个 VideoSensor 对应一个摄像头, 内部包含:
- *   - TSTC SDK 采集线程 (vendor SDK 事件循环)
+ *   - Nori Xvision SDK 帧轮询
  *   - turbojpeg MJPEG → BGR 解码
  *   - MPP H.265 硬件编码
  *   - FFmpeg 子进程 (FIFO → MKV)
@@ -27,8 +27,8 @@
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/mpp_err.h>
 
-// TSTC SDK
-#include "USBCam_API.h"
+// Nori Xvision SDK
+#include "Nori_Xvision_API.h"
 
 // elapsed_us() / g_t0 定义在 sensor.h
 
@@ -39,12 +39,10 @@
 #include "../../camera_config.h"
 
 // ============================================================
-// 全局互斥锁: TSTC SDK 的 STREAM_STATUS 不支持多路并发调用,
-// 必须串行化 (否则在多个 JHH2 设备上同时调用会死锁)
+// 启流顺序协调 (仅 IMU 硬件依赖, 非 SDK 限制)
 // ============================================================
-static std::mutex g_stream_start_mutex;
-extern std::atomic<int> g_jhh2_remaining;  // jhh04 等待此计数器归零
-extern std::atomic<bool> g_jhh02_init_done;  // 独立JHH2等六目jhh02先启流
+extern std::atomic<int> g_jhh2_remaining;   // jhh04 等待此计数器归零
+extern std::atomic<bool> g_jhh02_init_done; // 独立JHH2等六目jhh02先启流
 
 // Preview JPEG export globals (defined in main.cpp)
 extern std::atomic<bool> g_preview_pending;
@@ -55,14 +53,14 @@ class VideoSensor : public Sensor {
 public:
     VideoSensor(const CameraConfig& cfg,
                 const std::string& session_dir,
-                v4l2_dev_sys_data_t& dev_info,
+                uint32_t device_id,
                 int session_num,
                 const std::string& session_ts,
                 std::atomic<bool>& running)
         : Sensor(cfg.name, running)
         , cfg_(cfg)
         , session_dir_(session_dir)
-        , dev_info_(dev_info)
+        , device_id_(device_id)
         , session_num_(session_num)
         , session_ts_(session_ts) {}
 
@@ -73,30 +71,36 @@ public:
 protected:
     void setup() override {
         char path[256];
-        fprintf(stderr, "[%s] DBG setup: ENTER\n", cfg_.name);
+        fprintf(stderr, "[%s] DBG setup: ENTER (device_id=%u)\n", cfg_.name, device_id_);
 
         // ── 创建输出目录 ──
         snprintf(path, sizeof(path), "%s/%s", session_dir_.c_str(), cfg_.name);
         out_dir_ = path;
         mkdir_p(out_dir_.c_str(), 0755);
 
-        // ── 1. TSTC SDK 初始化 (全局锁保护, 避免同 VID/PID 设备冲突) ──
-        fprintf(stderr, "[%s] DBG setup: creating device point...\n", cfg_.name);
-        tstc_handle_ = TST_USBCam_CREATE_DEVICE_POINT(dev_info_);
-        if (!tstc_handle_) {
-            fprintf(stderr, "[%s] TST_USBCam_CREATE_DEVICE_POINT failed\n", cfg_.name);
+        // ── 1. Nori Xvision 初始化采集 ──
+        VIDEO_INFO vinfo;
+        // 获取设备默认格式（MJPEG），然后覆盖分辨率/帧率
+        Nori_Xvision_GetDeviceVideoInfo(device_id_, 0, &vinfo);
+        vinfo.u_Width  = (uint32_t)cfg_.width;
+        vinfo.u_Height = (uint32_t)cfg_.height;
+        vinfo.f_Fps    = (float)cfg_.fps;
+
+        fprintf(stderr, "[%s] DBG setup: DeviceVideoInit id=%u %dx%d@%.1f...\n",
+                cfg_.name, device_id_, vinfo.u_Width, vinfo.u_Height, vinfo.f_Fps);
+        uint32_t ret = Nori_Xvision_DeviceVideoInit(device_id_, vinfo);
+        if (ret != NORI_OK) {
+            fprintf(stderr, "[%s] DeviceVideoInit failed: 0x%x\n", cfg_.name, ret);
             return;
         }
-        fprintf(stderr, "[%s] DBG setup: handle=%p\n", cfg_.name, tstc_handle_);
+        fprintf(stderr, "[%s] DBG setup: DeviceVideoInit OK\n", cfg_.name);
 
-        fprintf(stderr, "[%s] DBG setup: opening %s...\n", cfg_.name, dev_info_.Device_Path);
-        dev_fd_ = open(dev_info_.Device_Path, O_RDWR | O_NONBLOCK);
-        if (dev_fd_ < 0) {
-            fprintf(stderr, "[%s] open %s failed: %s\n", cfg_.name, dev_info_.Device_Path, strerror(errno));
-            return;
+        // 设置触发模式为非触发 (连续采集)
+        E_TRIGGER_MODE mode;
+        Nori_Xvision_GetTriggerMode(device_id_, &mode);
+        if (mode != NON_TRIIGER_MODE) {
+            Nori_Xvision_SetTriggerMode(device_id_, NON_TRIIGER_MODE);
         }
-        fprintf(stderr, "[%s] DBG setup: dev_fd=%d\n", cfg_.name, dev_fd_);
-
 
         // ── 2. MPP 编码器 ──
         if (cfg_.output_h265) {
@@ -164,7 +168,7 @@ protected:
             }
         }
 
-        // ★ 等六目 jhh02 先完成启流 (六目必须最先拿到锁)
+        // ★ 等六目 jhh02 先完成启流 (IMU 硬件依赖)
         fprintf(stderr, "[%s] DBG setup: g_jhh02_init_done=%d, waiting...\n",
                 cfg_.name, (int)g_jhh02_init_done);
         for (int wait_i = 0; wait_i < 500 && !g_jhh02_init_done; wait_i++) {
@@ -172,34 +176,23 @@ protected:
         }
         fprintf(stderr, "[%s] DBG setup: wait done, g_jhh02_init_done=%d\n",
                 cfg_.name, (int)g_jhh02_init_done);
-        // ★ 整段上锁: DEAL_WITH_INIT → stream线程 → STREAM_STATUS
-        //    同 VID/PID 设备必须完全串行, 否则 SDK 内部状态冲突阻塞
-        fprintf(stderr, "[%s] DBG setup: acquiring stream_start_mutex...\n", cfg_.name);
-        {
-            std::lock_guard<std::mutex> lock(g_stream_start_mutex);
-            fprintf(stderr, "[%s] DBG setup: LOCKED\n", cfg_.name);
 
-            fprintf(stderr, "[%s] DBG setup: Video_DEAL_WITH_INIT...\n", cfg_.name);
-            if (TST_USBCam_Video_DEAL_WITH_INIT(tstc_handle_, dev_fd_) != 0) {
-                fprintf(stderr, "[%s] Video_DEAL_WITH_INIT failed\n", cfg_.name);
-                return;
-            }
-            fprintf(stderr, "[%s] DBG setup: Video_DEAL_WITH_INIT OK\n", cfg_.name);
-
-            fprintf(stderr, "[%s] DBG setup: creating stream thread...\n", cfg_.name);
-            pthread_create(&stream_thread_, nullptr, VideoSensor::stream_thread_func, this);
-            fprintf(stderr, "[%s] DBG setup: calling STREAM_STATUS(1)...\n", cfg_.name);
-            TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 1);
-            fprintf(stderr, "[%s] DBG setup: STREAM_STATUS(1) done\n", cfg_.name);
-            if (cfg_.vid == 0x1bcf && cfg_.pid == 0x2d50) {
-                int rem = --g_jhh2_remaining;
-                fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", cfg_.name, rem);
-            }
+        // ── 5. 启动视频流 ──
+        fprintf(stderr, "[%s] DBG setup: VideoStart id=%u...\n", cfg_.name, device_id_);
+        ret = Nori_Xvision_VideoStart(device_id_);
+        if (ret != NORI_OK) {
+            fprintf(stderr, "[%s] VideoStart failed: 0x%x\n", cfg_.name, ret);
+            return;
         }
-        fprintf(stderr, "[%s] DBG setup: stream_start_mutex released\n", cfg_.name);
+        fprintf(stderr, "[%s] DBG setup: VideoStart OK\n", cfg_.name);
 
-        printf("[%s] setup OK  (dev=%s, %dx%d@%dfps, H265=%c, Y8=%c)\n",
-               cfg_.name, dev_info_.Device_Path, cfg_.width, cfg_.height, cfg_.fps,
+        if (cfg_.vid == 0x1bcf && cfg_.pid == 0x2d50) {
+            int rem = --g_jhh2_remaining;
+            fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", cfg_.name, rem);
+        }
+
+        printf("[%s] setup OK  (dev_id=%u, %dx%d@%dfps, H265=%c, Y8=%c)\n",
+               cfg_.name, device_id_, cfg_.width, cfg_.height, cfg_.fps,
                cfg_.output_h265 ? 'Y' : 'N', cfg_.output_y8 ? 'Y' : 'N');
         fprintf(stderr, "[%s] DBG setup: EXIT (initialized=true)\n", cfg_.name);
         initialized_ = true;
@@ -211,7 +204,7 @@ protected:
             return;
         }
 
-        fprintf(stderr, "[%s] DBG collect: ENTER (stream already started in setup)\n", cfg_.name);
+        fprintf(stderr, "[%s] DBG collect: ENTER\n", cfg_.name);
 
         tjhandle tj = tjInitDecompress();
         uint64_t frame_idx = 0;
@@ -227,25 +220,25 @@ protected:
                 cfg_.name, (int)running_);
 
         while (running_) {
-            Frame_Buffer_Data* fb = TST_USBCam_GET_FRAME_BUFF(tstc_handle_, 0);
+            FRAME_BUFFER_DATA* fb = Nori_Xvision_GetFrameBuff(device_id_, false, 0);
             if (!fb) {
                 empty_polls++;
                 if (empty_polls == 1) {
-                    fprintf(stderr, "[%s] DBG collect: GET_FRAME_BUFF returned NULL (first time)\n", cfg_.name);
+                    fprintf(stderr, "[%s] DBG collect: GetFrameBuff NULL (first)\n", cfg_.name);
                 }
                 usleep(1000);
                 continue;
             }
 
             if (empty_polls > 0) {
-                fprintf(stderr, "[%s] DBG collect: got first frame after %d empty polls\n",
+                fprintf(stderr, "[%s] DBG collect: first frame after %d empty polls\n",
                         cfg_.name, empty_polls);
                 empty_polls = 0;
             }
 
             uint64_t ts_us = elapsed_us();
-            uint8_t* mjpg = (uint8_t*)fb->pMem;
-            size_t mjpg_len = fb->buffer.bytesused;
+            uint8_t* mjpg = (uint8_t*)fb->pBufAddr;
+            size_t mjpg_len = fb->buff_Length;
 
             // --- MJPEG → BGR (turbojpeg) ---
             int w = 0, h = 0, subsamp = 0;
@@ -255,7 +248,7 @@ protected:
                     fprintf(stderr, "[%s] DBG collect: tjDecompressHeader2 failed, len=%zu\n",
                             cfg_.name, mjpg_len);
                 }
-                TST_USBCam_SAVE_FRAME_RES(tstc_handle_, fb);
+                Nori_Xvision_FreeFrameBuff(device_id_, fb);
                 continue;
             }
 
@@ -268,7 +261,7 @@ protected:
                 if (!nv12) {
                     fprintf(stderr, "[%s] FATAL: nv12 alloc failed (w=%d h=%d size=%u)\n",
                             cfg_.name, w, h, nv12_size);
-                    TST_USBCam_SAVE_FRAME_RES(tstc_handle_, fb);
+                    Nori_Xvision_FreeFrameBuff(device_id_, fb);
                     break;
                 }
                 fprintf(stderr, "[%s] actual resolution %dx%d (cfg=%dx%d)\n",
@@ -348,7 +341,7 @@ protected:
             }
 
             delete[] bgr;
-            TST_USBCam_SAVE_FRAME_RES(tstc_handle_, fb);
+            Nori_Xvision_FreeFrameBuff(device_id_, fb);
             frame_idx++;
 
             if (frame_idx % 30 == 0) {
@@ -361,9 +354,8 @@ protected:
                 cfg_.name, (unsigned long long)frame_idx, empty_polls);
 
         // 停止流
-        fprintf(stderr, "[%s] DBG collect: stopping TSTC stream...\n", cfg_.name);
-        TST_USBCam_EVENT_LoopMode(tstc_handle_, 0);
-        TST_USBCam_Video_STREAM_STATUS(tstc_handle_, 0);  // 配对 STREAM_STATUS(1) in setup
+        fprintf(stderr, "[%s] DBG collect: VideoStop...\n", cfg_.name);
+        Nori_Xvision_VideoStop(device_id_);
 
         // Flush MPP
         if (cfg_.output_h265) {
@@ -402,12 +394,9 @@ protected:
             }
         }
 
-        // 等待 TSTC 流线程
-        if (stream_thread_) {
-            fprintf(stderr, "[%s] DBG teardown: joining stream thread...\n", cfg_.name);
-            pthread_join(stream_thread_, nullptr);
-            fprintf(stderr, "[%s] DBG teardown: stream thread joined\n", cfg_.name);
-        }
+        // 反初始化 Nori Xvision 设备
+        fprintf(stderr, "[%s] DBG teardown: DeviceVideoUnInit...\n", cfg_.name);
+        Nori_Xvision_DeviceVideoUnInit(device_id_);
 
         // 清理 MPP
         if (cfg_.output_h265) {
@@ -435,14 +424,9 @@ private:
     CameraConfig cfg_;
     std::string session_dir_;
     std::string out_dir_;
-    v4l2_dev_sys_data_t& dev_info_;
+    uint32_t device_id_;
     int session_num_;
     std::string session_ts_;
-
-    // TSTC
-    void* tstc_handle_ = nullptr;
-    int dev_fd_ = -1;
-    pthread_t stream_thread_ = 0;
 
     // MPP
     MppEncoder mpp_;
@@ -460,18 +444,4 @@ private:
     FrameQueue imu_queue_{4};
 
     bool initialized_ = false;
-
-    // ---- TSTC SDK 内部流线程 ----
-    static void* stream_thread_func(void* arg) {
-        auto* self = (VideoSensor*)arg;
-        Pix_Format fmt;
-        fmt.u_PixFormat = 0;
-        fmt.u_Width  = (uint32_t)self->cfg_.width;
-        fmt.u_Height = (uint32_t)self->cfg_.height;
-        fmt.u_Fps    = (uint32_t)self->cfg_.fps;
-        TST_USBCam_Video_DEAL_WITH(self->tstc_handle_, fmt);
-        TST_USBCam_Video_DEAL_WITH_UNINIT(self->tstc_handle_);
-        TST_USBCam_DELETE_DEVICE_POINT(self->tstc_handle_);
-        return nullptr;
-    }
 };

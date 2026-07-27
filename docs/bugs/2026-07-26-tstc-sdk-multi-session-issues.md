@@ -4,7 +4,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | 已规避 |
+| 状态 | 已解决（新 SDK v10.00.09） |
 | 严重级别 | High |
 | 首次发现 | 2026-07-26 |
 | 最后更新 | 2026-07-26 |
@@ -127,25 +127,16 @@ STREAM_STATUS(handle, 1)  // Session 2/3 返回负值或永久阻塞
 
 ## 解决或规避方案
 
-### 当前方案
+### 最终方案（2026-07-27）
 
-每次录像仅运行一个 Session，结束后主动退出进程，由 systemd 重新启动：
+迁移到供应商提供的新版 **Nori Xvision SDK v10.00.09**，该 SDK：
+- 具备明确的 `Init/UnInit` 边界，完整重置内部状态
+- 使用设备索引替代 opaque handle，回调/轮询双模替代旧式事件循环
+- 同进程 3 次连续 Session 验证通过（各 7 个输出文件均有数据）
 
-```ini
-[Service]
-ExecStart=/path/to/app --socket --single /data/capture
-Restart=always
-RestartSec=5
-```
+### 历史规避方案（已废弃）
 
-进程边界用于强制释放 SDK 内部状态。
-
-### 风险与限制
-
-- Session 之间存在 3–5 秒不可用间隔。
-- 无法实现零间隙连续录像。
-- fd 所有权仍不明确，调用者重复 `close()` 或遗漏 `close()` 的风险待供应商确认。
-- 规避方案不等于 SDK 根因修复。
+~~每次录像仅运行一个 Session，结束后主动退出进程，由 systemd 重新启动。进程边界用于强制释放 SDK 内部状态。~~
 
 ## 验证结果
 
@@ -157,6 +148,25 @@ RestartSec=5
 | systemd 重启 | Session 结束后退出并重启 | 下一次采集可启动 | 可恢复，间隔 3–5 秒 | 通过 |
 | 同进程三 Session | 完整执行三次生命周期 | 三次均正常 | Session 3 死锁 | 失败 |
 | fd 所有权 | 检查 SDK 文档或供应商答复 | 明确唯一关闭方 | 尚无结论 | 未验证 |
+| 新版 SDK 三 Session | Nori Xvision SDK v10.00.09，完整 Init/UnInit × 3 | 三次均正常 | Session 1/2/3 均完成，VideoStop 全部返回 NORI_OK | ✅ 通过 |
+
+### 新版 SDK 验证详情 (2026-07-27)
+
+使用供应商提供的新版 **Nori Xvision Development Kit v10.00.09**（2026-06-29），在同进程内执行 3 次完整 `Init → DeviceVideoInit → VideoStart → 采集 → VideoStop → DeviceVideoUnInit → UnInit` 生命周期：
+
+| Session | 帧数 | Init | VideoStop (4 devices) | UnInit | 结果 |
+|---------|------|------|----------------------|--------|------|
+| 1 | 575 | OK | 0x0 / 0x0 / 0x0 / 0x0 | OK | ✅ |
+| 2 | 574 | OK | 0x0 / 0x0 / 0x0 / 0x0 | OK | ✅ |
+| 3 | 573 | OK | 0x0 / 0x0 / 0x0 / 0x0 | OK | ✅ |
+
+**结论：** 新版 Nori Xvision SDK 已解决旧版 TSTC USBCam_API 的多 Session 死锁问题。新 SDK 具备明确的 `Nori_Xvision_Init/UnInit` 边界，推测其在 UnInit 时完整重置了内部全局状态。
+
+**注意事项：**
+- 新版 SDK API 与旧版 TSTC USBCam_API 完全不同，`unified_capture` 项目的 VideoSensor 层需要完整适配（头文件、函数签名、生命周期模型均变化）
+- 新 API 基于设备索引而非 opaque handle，回调模型替代了主动取帧
+
+测试程序：`/tmp/nori_multi_session_test.cpp`（位于板端 192.168.100.200）
 
 ## 相关文件
 
@@ -177,3 +187,4 @@ RestartSec=5
 |------|--------|------|
 | 2026-07-26 | unified_capture 团队 | 首次整理三个 TSTC SDK 问题并形成供应商反馈 |
 | 2026-07-26 | Codex | 迁入统一 Bug 目录并按标准结构整理 |
+| 2026-07-27 | 验证 | 使用新版 Nori Xvision SDK v10.00.09 测试，同进程 3 Session 全部通过 |

@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RK3588 四路摄像头统一采集程序。支持 2 路 JHH2 独立双目 + 1 台六目模组（JHH02 双目 + JHH04 四目），H.265 硬件编码 + Y8 原始灰度同步输出。目标平台为 RK3588 ARM64 板端。
 
+SDK: **Nori Xvision v10.00.09** (替代旧 TSTC USBCam_API v1.0.0)
+
 ## 编译
 
 ```bash
@@ -14,7 +16,7 @@ make
 
 # 交叉编译
 make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \
-     TSTC_INC=/path/to/tstc/include TSTC_LIB=/path/to/tstc/lib
+     NORI_INC=/path/to/nori/include NORI_LIB=/path/to/nori/lib
 
 # 扫描设备
 make scan
@@ -31,16 +33,16 @@ make test_hardware_header_layout  # 运行 shell 测试
 
 ### 线程模型
 
-**关键约束：禁止 pthread_create 用于 socket 通信。** TSTC SDK + MPP 对额外线程敏感，额外的 `pthread_create` 会污染驱动状态导致 MPP 崩溃。Socket 通信全部合并到主线程 poll() 中处理。
+Socket 通信全部合并到主线程 poll() 中处理。
 
 ```
 main (单线程 poll)
  ├── socket_setup()           → /tmp/unified_capture.sock (非阻塞)
- ├── resolve_camera_devices() → 匹配 USB VID/PID，分配设备指针
+ ├── resolve_camera_devices() → Nori_Xvision_Init 枚举，按 VID/PID 匹配 device_id
  ├── poll(gpio_fd + sock_fd)  → 主循环事件分发
  └── run_session()
-      ├── VideoSensor × 2     → JHH2 左/右 (各自 std::thread)
-      ├── SixCamSensor × 1    → JHH02 + JHH04 (同一个 thread)
+      ├── VideoSensor × 2     → JHH2 左/右 (各自 std::thread, GetFrameBuff 轮询)
+      ├── SixCamSensor × 1    → JHH02 + JHH04 (同一个 thread, 内部 2 个 std::thread)
       ├── ImuSensor × 3       → 从 FrameQueue 异步消费 BGR 帧
       ├── EncoderSensor × 1   → AS5600 I2C 读取 (100Hz)
       └── ViveTracker × 1     → VIVE 姿态 (libsurvive)
@@ -65,7 +67,7 @@ main (单线程 poll)
 ### 视频采集管道
 
 ```
-TSTC SDK (MJPEG)
+Nori Xvision SDK (MJPEG, GetFrameBuff 轮询)
   → turbojpeg 解码 → BGR24
     ├→ FrameQueue → ImuSensor (异步消费，码带解码)
     ├→ bgr2nv12 → NV12
@@ -80,26 +82,24 @@ TSTC SDK (MJPEG)
 
 - `g_t0` (timespec) — 所有时间戳的 CLOCK_MONOTONIC 纪元，在 `run_session()` 开始时设置
 - `g_session_running` (atomic bool) — 主循环和所有 sensor 线程的停止信号
-- `g_stream_start_mutex` — 全局互斥锁，串行化 TSTC SDK 的 DEAL_WITH_INIT / STREAM_STATUS 调用（同 VID/PID 设备并发会导致死锁）
-- `g_jhh2_remaining` (atomic int) — SixCam 的 jhh04 通道等待 jhh02 和 独立 JHH2 共 3 路启流完成后才开始流
+- `g_jhh2_remaining` (atomic int) — SixCam 的 jhh04 通道等待 jhh02 和独立 JHH2 共 3 路启流完成后才开始流
 - `g_jhh02_init_done` (atomic bool) — 独立 JHH2 等待六目 jhh02 先完成启流
 
 ### 设备匹配
 
-摄像头通过 USB VID/PID + 组内序号 (`group_order`) 匹配：
-- **JHH2 双目**: `1bcf:2d50`, 3840×1200@30fps, group_order 0/1
-- **JHH02 (六目双目侧)**: `1bcf:2d50`, group_order 2
+摄像头通过 Nori_Xvision_Init 枚举，按 VID/PID + 枚举序号匹配：
+- **JHH2 双目**: `1bcf:2d50`, 3840×1200@30fps, device_id 0/1
+- **JHH02 (六目双目侧)**: `1bcf:2d50`, device_id 2
 - **JHH04 (六目四目侧)**: `1bcf:2d51`, 3104×480@30fps
 - **VIVE Tracker**: `28de:2300`, sysfs 自动检测
 
-### 启流顺序（严格，不可改变）
+### 启流顺序（IMU 硬件依赖，非 SDK 限制）
 
 1. SixCam JHH02 先启流（`g_jhh02_init_done = true`）
-2. 独立 JHH2 左目等待 jhh02 完成后再启流
-3. 独立 JHH2 右目同上
-4. SixCam JHH04 等待 `g_jhh2_remaining` 归零后启流
+2. 独立 JHH2 左/右目等待 jhh02 完成后再启流（并行）
+3. SixCam JHH04 等待 `g_jhh2_remaining` 归零后启流
 
-所有同 VID/PID 设备的 `DEAL_WITH_INIT → stream_thread → STREAM_STATUS` 在 `g_stream_start_mutex` 保护下完整串行。
+新 SDK 支持多路并发启动，无需全局互斥锁。
 
 ### 运行模式
 
@@ -132,7 +132,7 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，每条命令以换行�
 
 ### 关键依赖（仅 RK3588 板端可用）
 
-- **TSTC SDK** (`USBCam_API.h`, `libUSBCam_API`) — USB3 Vision 驱动
+- **Nori Xvision SDK v10.00.09** (`Nori_Xvision_API.h`, `libNori_Xvision_Std`) — USB3 Vision 驱动，安装在 `/usr/local/Nori_Xvision/`
 - **Rockchip MPP** (`librockchip_mpp`) — H.265 硬件编码
 - **libturbojpeg** — MJPEG 解码
 - **libgpiod** — GPIO 按键
@@ -146,7 +146,7 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，每条命令以换行�
 - 使用 MKV 容器封装 H.265 视频流
 - Socket 通信合入主线程 poll() 而非独立线程
 - Preview JPEG 在 sensor collect 循环中按需导出，不创建额外线程
-- 多 session 进程隔离（`--single` + systemd Restart）
+- 2026-07-27 从 TSTC USBCam_API v1.0.0 迁移到 Nori Xvision SDK v10.00.09（解决多 Session 死锁，简化启流模型）
 
 ## 注意事项
 
