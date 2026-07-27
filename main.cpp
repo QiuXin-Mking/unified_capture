@@ -26,7 +26,7 @@ extern "C" {
 #include "hardware/VideoSensor/VideoSensor.h"
 #include "hardware/VideoSensor/SixCamSensor.h"
 #include "hardware/IMU/ImuSensor.h"
-#include "encoder_sensor.h"
+#include "hardware/as5600/encoder_sensor.h"
 #include "output_path.h"
 #include "vive_usb.h"
 #include "hardware/tracker/ViveTrackerSensor.h"

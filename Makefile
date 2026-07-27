@@ -51,7 +51,7 @@ $(TARGET): $(OBJS)
 main.o: main.cpp sensor.h camera_config.h barrier.h time_utils.h output_path.h \
         hardware/VideoSensor/VideoSensor.h hardware/VideoSensor/SixCamSensor.h \
         hardware/VideoSensor/bgr2nv12.h hardware/VideoSensor/mpp_encoder.h \
-        hardware/IMU/ImuSensor.h hardware/IMU/imu_decode.h encoder_sensor.h \
+        hardware/IMU/ImuSensor.h hardware/IMU/imu_decode.h hardware/as5600/encoder_sensor.h \
         hardware/tracker/ViveTrackerSensor.h hardware/tracker/resample_grid.h \
         frame_queue.h vive_usb.h hardware/as5600/as5600.h
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ main.cpp
