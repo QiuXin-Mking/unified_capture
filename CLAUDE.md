@@ -89,7 +89,7 @@ Nori Xvision SDK (MJPEG, GetFrameBuff 轮询)
 
 摄像头通过 Nori_Xvision_Init 枚举，按 VID/PID + 枚举序号匹配：
 - **JHH2 双目**: `1bcf:2d50`, 3840×1200@30fps, device_id 0/1
-- **JHH02 (六目双目侧)**: `1bcf:2d50`, device_id 2
+- **JHH02 (六目双目侧)**: `1bcf:2d50`, 4000×1200@30fps, device_id 2
 - **JHH04 (六目四目侧)**: `1bcf:2d51`, 3104×480@30fps
 - **VIVE Tracker**: `28de:2300`, sysfs 自动检测
 

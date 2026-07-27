@@ -8,7 +8,7 @@ RK3588 四路摄像头统一采集程序。支持 2 路 JHH2 独立双目 + 1 �
 |------|---------|--------|------|------|
 | JHH2 左目 | 1bcf:2d50 | 3840×1200 | 30fps | H.265 MKV + Y8 |
 | JHH2 右目 | 1bcf:2d50 | 3840×1200 | 30fps | H.265 MKV + Y8 |
-| SixCam JHH02（双目） | 1bcf:2d50 | 3104×480 | 30fps | H.265 MKV + Y8 + IMU |
+| SixCam JHH02（双目） | 1bcf:2d50 | 4000×1200 | 30fps | H.265 MKV + Y8 + IMU |
 | SixCam JHH04（四目） | 1bcf:2d51 | 3104×480 | 30fps | Y8 + IMU |
 | AS5600 编码器 | I2C 0x36 | — | 100Hz | CSV |
 | VIVE Tracker 3.0 | USB HID | — | — | pose CSV |
@@ -64,6 +64,7 @@ make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \
 ## Socket 控制协议
 
 Unix Domain Socket，路径 `/tmp/unified_capture.sock`，纯文本协议，每条命令以换行结束。
+完整字段、状态语义与前端接入示例见 [Socket 控制协议](docs/socket-control.md)。
 
 ```bash
 # 状态查询
@@ -160,6 +161,6 @@ main (单线程 poll)
 | `vive_usb.h` | VIVE USB HID 协议 |
 | `hardware/as5600/as5600.c/h` | AS5600 I2C 驱动 |
 | `BUG_PTHREAD_SOCKET.md` | pthread socket 致 MPP 崩溃根因分析 |
-| `SOCKET_CONTROL.md` | Socket 控制协议详细文档 |
+| [`docs/socket-control.md`](docs/socket-control.md) | Socket 控制协议详细文档 |
 | `unified_capture.service` | systemd unit 文件 |
 | `test_socket.sh` | Socket 验收测试脚本 |
