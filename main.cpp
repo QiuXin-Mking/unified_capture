@@ -181,29 +181,15 @@ static int resolve_camera_devices() {
                info.iManufacturer, info.iProduct, info.device);
     }
 
-    // 匹配 JHH2 独立相机 (1bcf:2d50, 取前 2 个)
+    // --- 找到 JHH2 (1bcf:2d50) 设备组 ---
     VidPidGroup* jhh2_grp = nullptr;
     for (auto& g : groups) {
         if (g.vid == JHH2_VID && g.pid == JHH2_PID) { jhh2_grp = &g; break; }
     }
-    if (jhh2_grp) {
-        for (int i = 0; i < N_CAMS && i < (int)jhh2_grp->device_ids.size(); i++) {
-            auto& cam = CAMS[i];
-            if (!cam.enabled) continue;
-            cam.cfg.device_id = jhh2_grp->device_ids[i];
-            DEVICE_INFO info;
-            Nori_Xvision_GetDeviceInfo(cam.cfg.device_id, &info);
-            printf("  %-12s -> device[%u] %s  %dx%d@%d IMU=%c\n",
-                   cam.cfg.name, cam.cfg.device_id, info.device,
-                   cam.cfg.width, cam.cfg.height, cam.cfg.fps,
-                   cam.cfg.has_imu ? 'Y' : 'N');
-        }
-    }
 
     int active = 0;
-    for (int i = 0; i < N_CAMS; i++) if (CAMS[i].enabled && CAMS[i].cfg.device_id >= 0) active++;
 
-    // 匹配六目模组 jhh04 (1bcf:2d51)
+    // --- 匹配六目模组 jhh04 (1bcf:2d51) ---
     for (auto& g : groups) {
         if (g.vid == SIX_VID && g.pid == SIX_PID && !g.device_ids.empty()) {
             g_sixcam.jhh04_id = g.device_ids[0];
@@ -217,18 +203,52 @@ static int resolve_camera_devices() {
         }
     }
 
-    // jhh02 (六目双目侧): 从 jhh2_grp 中取 group_order=2
-    if (g_sixcam.enabled && jhh2_grp && jhh2_grp->device_ids.size() >= 3) {
+    // --- 设备分配: SixCam jhh02 优先, 独立 JHH2 使用剩余 ---
+    int jhh2_total = jhh2_grp ? (int)jhh2_grp->device_ids.size() : 0;
+
+    // Step 1: 先分配 SixCam jhh02 (需要第 3 个 2d50, 即 index=2)
+    if (g_sixcam.enabled && jhh2_grp && jhh2_total >= 3) {
         g_sixcam.jhh02_id = jhh2_grp->device_ids[2];
         DEVICE_INFO info;
         Nori_Xvision_GetDeviceInfo(g_sixcam.jhh02_id, &info);
         printf("  %-12s -> device[%u] %s  4000x1200@30 IMU=Y (SixCam)\n",
                "jhh02", g_sixcam.jhh02_id, info.device);
+        active++;
+    } else if (g_sixcam.enabled && jhh2_grp && jhh2_total == 2) {
+        // 只有 2 台 2d50: SixCam jhh02 用第 2 台, 独立 JHH2 只用 1 台
+        g_sixcam.jhh02_id = jhh2_grp->device_ids[1];
+        DEVICE_INFO info;
+        Nori_Xvision_GetDeviceInfo(g_sixcam.jhh02_id, &info);
+        printf("  %-12s -> device[%u] %s  4000x1200@30 IMU=Y (SixCam, 2d50x2 mode)\n",
+               "jhh02", g_sixcam.jhh02_id, info.device);
+        active++;
     } else if (g_sixcam.enabled) {
-        fprintf(stderr, "WARN: jhh02 not found (need 3+ 1bcf:2d50 devices)\n");
+        fprintf(stderr, "WARN: jhh02 not found (need >=2 1bcf:2d50 devices, got %d)\n", jhh2_total);
         g_sixcam.enabled = false;
         active--;
     }
+
+    // Step 2: 再分配独立 JHH2 (使用剩余设备)
+    int jhh2_used = (g_sixcam.enabled && g_sixcam.jhh02_id > 0) ? 1 : 0;
+    int jhh2_avail = jhh2_total - jhh2_used;
+    for (int i = 0; i < N_CAMS; i++) {
+        auto& cam = CAMS[i];
+        if (!cam.enabled) continue;
+        if (i < jhh2_avail) {
+            cam.cfg.device_id = jhh2_grp->device_ids[i];
+            DEVICE_INFO info;
+            Nori_Xvision_GetDeviceInfo(cam.cfg.device_id, &info);
+            printf("  %-12s -> device[%u] %s  %dx%d@%d IMU=%c\n",
+                   cam.cfg.name, cam.cfg.device_id, info.device,
+                   cam.cfg.width, cam.cfg.height, cam.cfg.fps,
+                   cam.cfg.has_imu ? 'Y' : 'N');
+        } else {
+            cam.enabled = false;
+            printf("  %-12s -> disabled (not enough 2d50 devices)\n", cam.cfg.name);
+        }
+    }
+
+    for (int i = 0; i < N_CAMS; i++) if (CAMS[i].enabled && CAMS[i].cfg.device_id >= 0) active++;
 
     return active;
 }
