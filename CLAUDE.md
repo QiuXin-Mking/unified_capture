@@ -42,7 +42,7 @@ app/main.cpp
       └── SessionRunner
            ├── VideoSensor × 2   → JHH2 左/右（各自 std::thread）
            ├── SixCamSensor × 1  → JHH02 + JHH04 双通道
-           ├── ImuSensor × 最多 4 → 从 FrameQueue 异步消费 BGR 帧
+           ├── ImuSensor × 最多 4 → JHH2 左、JHH2 右、JHH02、JHH04 各自从 FrameQueue 异步消费 BGR 帧
            ├── EncoderSensor × 1 → AS5600 I2C 读取（100 Hz）
            └── ViveTracker × 1   → VIVE 姿态（检测到设备时）
 ```
