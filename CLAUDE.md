@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-RK3588 四路摄像头统一采集程序。支持 2 路 JHH2 独立双目 + 1 台六目模组（JHH02 双目 + JHH04 四目），H.265 硬件编码 + Y8 原始灰度同步输出。目标平台为 RK3588 ARM64 板端。
+RK3588 统一采集程序。`mango` 保持 2 路 JHH2 独立双目与六目模组；`banana` 为左、右腕部单目，输出 H.265 MKV 和异步 IMU JSONL，且不输出 Y8。目标平台为 RK3588 ARM64 板端。
 
 SDK: **Nori Xvision v10.00.09** (替代旧 TSTC USBCam_API v1.0.0)
 
@@ -25,7 +25,9 @@ make scan
 make test
 ```
 
-生产程序的编译单元为 `app/*.cpp`、`hardware/common/sensor.cpp`、`hardware/video/device_discovery.cpp` 和 `hardware/as5600/as5600.c`；其余实现位于 header 中并由这些编译单元包含。
+生产程序的编译单元包括 `app/*.cpp`、`core/product_config.cpp`、`hardware/common/sensor.cpp`、`hardware/video/device_discovery.cpp`、`hardware/wrist/*.cpp` 和 `hardware/as5600/as5600.c`。
+
+`/etc/unified_capture/product.conf` 选择 `mango` 或 `banana`；`/etc/unified_capture/camera-map.conf` 保存可编辑的精确 Nori `iProduct` 匹配。banana 的缺失设备策略由 `allow_missing_devices` 决定。腕部麦克风能力尚未确认；不要在未另行批准前增加音频枚举、采集、封装或状态字段。
 
 ## 架构
 

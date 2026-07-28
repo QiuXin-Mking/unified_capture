@@ -1,6 +1,6 @@
 # unified_capture
 
-RK3588 四路摄像头统一采集程序。支持 2 路 JHH2 独立双目 + 1 台六目模组（JHH02 双目 + JHH04 四目），H.265 硬件编码 + `.y8` 原始灰度同步输出。
+RK3588 统一采集程序。`mango` 保持原有 JHH2 独立双目与六目模组；`banana` 采集左、右腕部单目，输出 H.265 MKV 与异步 IMU JSONL。
 
 ## 硬件
 
@@ -12,6 +12,8 @@ RK3588 四路摄像头统一采集程序。支持 2 路 JHH2 独立双目 + 1 �
 | SixCam JHH04（四目） | 1bcf:2d51 | 3104×480 | 30fps | `.y8` + IMU JSONL |
 | AS5600 编码器 | I2C 0x36 | — | 100Hz | JSONL |
 | VIVE Tracker 3.0 | USB HID | — | — | pose JSONL |
+| banana 左腕 | Nori `SL`（可配置） | 1440×960 | 30fps | H.265 MKV + IMU JSONL（无 Y8） |
+| banana 右腕 | Nori `JHHSW`（可配置） | 1440×960 | 30fps | H.265 MKV + IMU JSONL（无 Y8） |
 
 ## 依赖（RK3588 板端）
 
@@ -34,6 +36,20 @@ make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \
 ```
 
 ## 运行
+
+### 产品配置
+
+服务启动前必须读取以下两个文件；示例文件可直接作为初始配置安装：
+
+```bash
+install -d /etc/unified_capture
+cp deploy/product.conf.example /etc/unified_capture/product.conf
+cp deploy/camera-map.conf.example /etc/unified_capture/camera-map.conf
+```
+
+`product.conf` 只能选择 `mango` 或 `banana`。`camera-map.conf` 将产品的逻辑名映射到精确 Nori `iProduct`；初始 banana 映射为左腕 `SL`、右腕 `JHHSW`，可按硬件修改。banana 的 `allow_missing_devices=true` 表示缺失一侧或两侧时服务仍会就绪，`status` 返回 `"degraded":true`，并允许 `start`/`stop`。配置错误仍会阻止服务启动。
+
+banana 固定输出 H.265 MKV 与从视频帧异步解码的 IMU JSONL，不生成 `.y8`，也不启动 AS5600 或 VIVE。腕部是否暴露麦克风及其 USB 音频身份、声道、采样率和左右关联仍是待确认事项；本版本不枚举、录制或封装音频。
 
 ### GPIO 按键模式（调试/手动）
 
@@ -61,6 +77,7 @@ make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \
 --no-h265       只输出 .y8 原始灰度，不生成 MKV
 --socket        纯 socket 模式（无 GPIO），适合 systemd
 --single        完成一个 session 后退出
+--config <path> 使用指定 product.conf（camera-map 仍为 /etc/unified_capture/camera-map.conf）
 -h, --help      显示用法
 output_prefix   相对路径写入 /media/usb0/capture/；绝对路径必须在该目录下
 ```
@@ -74,6 +91,8 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，纯文本协议，每�
 # 状态查询
 echo "status" | nc -U /tmp/unified_capture.sock
 # → {"ok":true,"ready":true,"running":false,"cameras":{"jhh2_left":true,...}}
+
+# banana: {"product":"banana","degraded":false,"cameras":{"wrist_left":true,"wrist_right":true},...}
 
 # 开始采集
 echo "start" | nc -U /tmp/unified_capture.sock
@@ -99,6 +118,8 @@ systemctl start unified_capture
 ## 输出数据结构
 
 ```
+
+banana 的每次 session 仅创建已发现的 `wrist_left/`、`wrist_right/` 目录；每个目录包含 `*.mkv`（HEVC）与 `*.jsonl`（异步 IMU），不包含 `.y8`。板端验收见 [tests/README.md](tests/README.md)。
 /media/usb0/capture/experiment_001/
 └── session_001/
     ├── jhh2_left/

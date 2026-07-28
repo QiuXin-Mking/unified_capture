@@ -16,6 +16,11 @@ make test
 
 # 系统测试（需板端且程序运行中）
 ./tests/test_socket.sh
+
+# banana 腕部 profile（每个 CASE 均使用新的、带时间戳的 PREFIX）
+PREFIX=/media/usb0/capture/banana_$(date +%Y%m%d_%H%M%S) \
+SOCK=/tmp/unified_capture.sock CASE=two \
+./tests/test_banana_wrist_socket.sh
 ```
 
 ## 单元测试
@@ -65,6 +70,26 @@ make test_<module>         # 单个测试 target
 | 7 | 重复 stop | `"ok":false,"error":"not running"` |
 | 8 | 未知命令 | `"ok":false,"error":"unknown command"` |
 | 9 | 停止后 status | `"running":false` |
+
+`test_banana_wrist_socket.sh` — 仅用于 `product=banana` 的板端验收。它读取
+`PREFIX` 与 `SOCK`，不会删除任何输出或启停服务。每次物理设备变化后重启服务，
+并传入新的输出目录：
+
+```bash
+# 左、右腕均连接：必须非 degraded，并校验两路 HEVC MKV + 非空 IMU JSONL。
+PREFIX=/media/usb0/capture/banana_two_$(date +%Y%m%d_%H%M%S) \
+SOCK=/tmp/unified_capture.sock CASE=two ./tests/test_banana_wrist_socket.sh
+
+# 仅连接任意一侧：degraded 仍可 start/stop，只能有已连接侧输出。
+PREFIX=/media/usb0/capture/banana_one_$(date +%Y%m%d_%H%M%S) \
+SOCK=/tmp/unified_capture.sock CASE=one ./tests/test_banana_wrist_socket.sh
+
+# 左、右腕均断开：degraded 仍可 start/stop，session 下不得生成 MKV、JSONL 或 Y8。
+PREFIX=/media/usb0/capture/banana_zero_$(date +%Y%m%d_%H%M%S) \
+SOCK=/tmp/unified_capture.sock CASE=zero ./tests/test_banana_wrist_socket.sh
+```
+
+脚本在每个有设备的目录调用 `ffprobe`，要求视频编码为 `hevc`，并拒绝任意 `.y8`。
 
 ### 编写新的系统测试
 
