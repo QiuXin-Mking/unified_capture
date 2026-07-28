@@ -265,11 +265,8 @@ int Runtime::run() {
                 keep_running_ = false;
                 session_running_ = false;
             }
-            return;
         }
-        if (result == 0) {
-            return;
-        }
+        // result == 0 (timeout) or result > 0: 都继续处理
 
         for (int i = 0; i < count; i++) {
             if (!(descriptors[i].revents & POLLIN)) {
