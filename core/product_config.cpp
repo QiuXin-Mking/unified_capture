@@ -187,6 +187,16 @@ ProductConfigResult load_product_configuration(
         if (!result.error.empty()) {
             return result;
         }
+
+        // sixcam (optional, default false)
+        auto sixcam = banana->second.find("sixcam.enabled");
+        if (sixcam != banana->second.end()) {
+            if (sixcam->second == "true") {
+                configuration.sixcam_enabled = true;
+            } else if (sixcam->second != "false") {
+                return error_result("sixcam.enabled must be true or false");
+            }
+        }
     }
 
     return ProductConfigResult{configuration, ""};

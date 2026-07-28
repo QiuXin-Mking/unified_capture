@@ -4,6 +4,7 @@
 allow_missing_devices=true
 wrist_left.product=SL
 wrist_right.product=JHHSW
+sixcam.enabled=true
 head.enabled=false
 
 [mango]

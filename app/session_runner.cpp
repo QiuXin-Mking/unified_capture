@@ -48,7 +48,7 @@ std::string SessionRunner::make_session_dir(const std::string& prefix,
         snprintf(path, sizeof(path), "%s/%s", session_dir.c_str(), camera.config.name);
         mkdir_p(path, 0755);
     }
-    if (cameras_.profile == ProductProfile::mango && cameras_.sixcam.enabled) {
+    if (cameras_.sixcam.enabled) {
         snprintf(path, sizeof(path), "%s/jhh04", session_dir.c_str());
         mkdir_p(path, 0755);
         snprintf(path, sizeof(path), "%s/jhh02", session_dir.c_str());
@@ -89,6 +89,33 @@ void SessionRunner::run(const std::string& session_dir,
                 sensors.push_back(std::make_unique<ImuSensor>(
                     config.name, session_dir, video_ptr->imu_queue(), session_number,
                     session_timestamp, config.imu_orientation, session_running_));
+            }
+        }
+
+        // ── 六目模块 (banana sixcam) ──
+        if (cameras_.sixcam.enabled && cameras_.sixcam.jhh04_id > 0 &&
+            cameras_.sixcam.jhh02_id > 0) {
+            CameraConfig jhh04{
+                "jhh04", kSixVid, kSixPid, 0, 3104, 480, 30, 4000000, 30, true,
+                ImuOrientation::HORIZONTAL_TOP, false, true, -1};
+            CameraConfig jhh02{
+                "jhh02", kJhh2Vid, kJhh2Pid, 2, 4000, 1200, 30, 16000000, 30, true,
+                ImuOrientation::HORIZONTAL_TOP, options_.use_h265, true, -1};
+            auto sixcam = std::make_unique<SixCamSensor>(
+                jhh04, jhh02, cameras_.sixcam.jhh04_id, cameras_.sixcam.jhh02_id,
+                session_dir, session_number, session_timestamp, session_running_,
+                capture_control_);
+            SixCamSensor* sixcam_ptr = sixcam.get();
+            sensors.push_back(std::move(sixcam));
+            if (options_.use_imu) {
+                sensors.push_back(std::make_unique<ImuSensor>(
+                    "jhh04", session_dir, sixcam_ptr->imu_queue_jhh04(),
+                    session_number, session_timestamp,
+                    ImuOrientation::HORIZONTAL_TOP, session_running_));
+                sensors.push_back(std::make_unique<ImuSensor>(
+                    "jhh02", session_dir, sixcam_ptr->imu_queue_jhh02(),
+                    session_number, session_timestamp,
+                    ImuOrientation::HORIZONTAL_TOP, session_running_));
             }
         }
     } else {

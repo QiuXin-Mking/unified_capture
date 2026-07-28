@@ -205,6 +205,58 @@ CameraDiscoveryResult discover_banana_cameras(
     result.degraded = wrist.degraded;
     result.camera_errors = std::move(wrist.errors);
     result.active_count = wrist.active_count;
+
+    // ── 六目模块发现 (banana sixcam) ──
+    if (configuration.sixcam_enabled) {
+        uint32_t sixcam_bus = 0;
+
+        // 找 JHH04 (1bcf:2d51)
+        for (uint32_t i = 0; i < total_devices; i++) {
+            DEVICE_INFO info{};
+            if (Nori_Xvision_GetDeviceInfo(i, &info) != NORI_OK) continue;
+            if (info.idVendor == kSixVid && info.idProduct == kSixPid) {
+                result.sixcam.jhh04_id = static_cast<int>(i);
+                result.sixcam.enabled = true;
+                sixcam_bus = info.busnum;
+                printf("  %-12s -> device[%u] bus=%u  %s (SixCam)\n",
+                       "jhh04", i, info.busnum,
+                       device_product_name(info).c_str());
+                result.active_count++;
+                break;
+            }
+        }
+
+        // 找 JHH02 (1bcf:2d50, 同一 bus)
+        if (result.sixcam.enabled && sixcam_bus > 0) {
+            for (uint32_t i = 0; i < total_devices; i++) {
+                DEVICE_INFO info{};
+                if (Nori_Xvision_GetDeviceInfo(i, &info) != NORI_OK) continue;
+                if (info.idVendor == kJhh2Vid && info.idProduct == kJhh2Pid &&
+                    info.busnum == sixcam_bus) {
+                    result.sixcam.jhh02_id = static_cast<int>(i);
+                    printf("  %-12s -> device[%u] bus=%u  %s (SixCam)\n",
+                           "jhh02", i, info.busnum,
+                           device_product_name(info).c_str());
+                    result.active_count++;
+                    break;
+                }
+            }
+            if (!result.sixcam.jhh02_id) {
+                fprintf(stderr, "WARN: jhh02 not found on SixCam bus %u\n",
+                        sixcam_bus);
+                result.sixcam.enabled = false;
+                result.active_count--;
+                result.camera_errors.emplace_back(
+                    "jhh02 not found on sixcam bus");
+            }
+        } else {
+            result.sixcam.enabled = false;
+            if (result.camera_errors.empty() || configuration.wrist.allow_missing_devices) {
+                result.camera_errors.emplace_back("jhh04 sixcam not found");
+            }
+        }
+    }
+
     return result;
 }
 

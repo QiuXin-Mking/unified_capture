@@ -27,6 +27,10 @@ std::vector<std::pair<std::string, bool>> status_cameras(
     if (cameras.profile == ProductProfile::banana) {
         result.emplace_back("wrist_left", cameras.wrist[0].enabled);
         result.emplace_back("wrist_right", cameras.wrist[1].enabled);
+        if (cameras.sixcam.enabled) {
+            result.emplace_back("jhh04", cameras.sixcam.jhh04_id > 0);
+            result.emplace_back("jhh02", cameras.sixcam.jhh02_id > 0);
+        }
         return result;
     }
 
@@ -117,14 +121,17 @@ int Runtime::run() {
         Nori_Xvision_UnInit();
         return 1;
     }
-    if (is_banana && !configuration.wrist.allow_missing_devices &&
-        cameras.active_count != static_cast<int>(cameras.wrist.size())) {
-        fprintf(stderr, "ERROR: banana requires both wrist cameras\n");
-        for (const std::string& error : cameras.camera_errors) {
-            fprintf(stderr, "  %s\n", error.c_str());
+    if (is_banana && !configuration.wrist.allow_missing_devices) {
+        int expected = static_cast<int>(cameras.wrist.size());
+        if (configuration.sixcam_enabled) expected += 2;
+        if (cameras.active_count != expected) {
+            fprintf(stderr, "ERROR: banana requires all devices (wrist x2 + sixcam)\n");
+            for (const std::string& error : cameras.camera_errors) {
+                fprintf(stderr, "  %s\n", error.c_str());
+            }
+            Nori_Xvision_UnInit();
+            return 1;
         }
-        Nori_Xvision_UnInit();
-        return 1;
     }
 
     if (is_banana && options_.use_imu) {

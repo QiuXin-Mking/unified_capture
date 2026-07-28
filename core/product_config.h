@@ -15,6 +15,7 @@ struct WristDeviceMap {
 struct ProductConfiguration {
     ProductProfile profile = ProductProfile::mango;
     WristDeviceMap wrist;
+    bool sixcam_enabled = false;  // banana: include six-camera module
 };
 
 struct ProductConfigResult {
