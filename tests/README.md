@@ -4,17 +4,15 @@
 
 | 类别 | 位置 | 运行环境 | 说明 |
 |------|------|---------|------|
-| **单元测试** | `test_*.cpp` (项目根目录) | 任何 Linux | 纯逻辑验证，无硬件依赖 |
-| **布局检查** | `tests/test_hardware_header_layout.sh` | 任何 Linux | 验证头文件路径与 include 一致性 |
+| **单元测试** | `tests/test_*.cpp` | 任何 Linux | 纯逻辑验证，无硬件依赖；产物写入 `build/tests/` |
+| **布局检查** | `tests/test_source_layout.sh` | 任何 Linux | 验证源码目录与 include 布局 |
 | **系统测试** | `tests/test_*.sh` | 仅 RK3588 板端 | 需要硬件 + 程序运行中 |
 
 ## 运行测试
 
 ```bash
 # 所有测试
-make test_output_path
-make test_time_utils
-make test_hardware_header_layout
+make test
 
 # 系统测试（需板端且程序运行中）
 ./tests/test_socket.sh
@@ -25,8 +23,8 @@ make test_hardware_header_layout
 ### 要求
 
 - 单文件 `.cpp`，`#include` 被测 header，`main()` 中用 `assert()` 验证
-- 放在项目根目录，Makefile 提供对应 target：`make test_<name>`
-- **不依赖** TSTC SDK、MPP、libsurvive 等板端库
+- 所有单元测试源码放在 `tests/`，对应可执行产物放在 `build/tests/`；Makefile 提供 `make test_<name>` target
+- **不依赖** Nori SDK、MPP、libsurvive 等板端库
 
 ### 现有测试
 
@@ -34,13 +32,19 @@ make test_hardware_header_layout
 |------|------|
 | `test_output_path.cpp` | SD 卡路径校验、前缀生成、挂载检测 |
 | `test_time_utils.cpp` | `mkdir_p` 递归目录创建 |
+| `test_video_capture_control.cpp` | 视频启流顺序与预览请求控制 |
+| `test_socket_command.cpp` | Socket 文本命令解析 |
+| `test_source_layout.sh` | 源码目录与禁用旧路径检查 |
 
 ### 命名约定
 
 ```
 test_<module>.cpp          # 源文件
-make test_<module>         # Makefile target
+build/tests/test_<module>  # 单元测试产物
+make test_<module>         # 单个测试 target
 ```
+
+`make test` 是完整的无硬件回归：它运行全部主机单元测试和 `test_source_layout`。
 
 ## 系统测试
 

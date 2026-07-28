@@ -90,8 +90,8 @@ MKV 同时保留了裸流方案的顺序写入特性和容器方案的时间戳�
 - [来源设计：06-mp4-mkv-raw 差异](../../../06-mp4-mkv-raw差异.md)
 - [分阶段相机验证计划](../records/2026-07-23-stage-test-plan.md)
 - [将 session 目录映射为 Recording 模型](2026-07-26-session-recording-mapping.md)
-- [VideoSensor 的 FIFO → FFmpeg → MKV 实现](../../hardware/VideoSensor/VideoSensor.h)
-- [SixCamSensor 的 FIFO → FFmpeg → MKV 实现](../../hardware/VideoSensor/SixCamSensor.h)
+- [VideoSensor 的 FIFO → FFmpeg → MKV 实现](../../hardware/video/video_sensor.h)
+- [SixCamSensor 的 FIFO → FFmpeg → MKV 实现](../../hardware/video/sixcam_sensor.h)
 
 ## 变更记录
 

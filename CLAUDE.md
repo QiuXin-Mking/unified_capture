@@ -21,13 +21,11 @@ make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \
 # 扫描设备
 make scan
 
-# 测试
-make test_output_path    # 构建 + 运行 output_path 测试
-make test_time_utils     # 构建 + 运行 time_utils 测试
-make test_hardware_header_layout  # 运行 shell 测试
+# 测试（无硬件回归）
+make test
 ```
 
-源码只有两个编译单元：`main.cpp` (C++20) 和 `hardware/as5600/as5600.c` (C11)。所有其他 `.h` 文件均为 header-only，直接 include 使用。
+生产程序的编译单元为 `app/*.cpp`、`hardware/common/sensor.cpp`、`hardware/video/device_discovery.cpp` 和 `hardware/as5600/as5600.c`；其余实现位于 header 中并由这些编译单元包含。
 
 ## 架构
 
@@ -136,7 +134,7 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，每条命令以换行�
 - **Rockchip MPP** (`librockchip_mpp`) — H.265 硬件编码
 - **libturbojpeg** — MJPEG 解码
 - **libgpiod** — GPIO 按键
-- **libsurvive** — VIVE Tracker（可选，`--no-vive` 跳过）
+- **libsurvive** — VIVE Tracker（检测到设备时自动启用）
 - **FFmpeg** — MKV 封装（运行时 fork+exec）
 
 ## 设计决策记录
@@ -153,4 +151,4 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，每条命令以换行�
 - 所有输出必须落在 SD 卡 `/media/usb0/capture/` 下，程序启动时强制检查
 - AS5600 驱动为纯 C (`hardware/as5600/as5600.c`)，通过 `extern "C"` 在 C++ 中调用
 - MPP 编码器需要 NV12 输入，实际 JPEG 解码尺寸可能与配置尺寸不同，代码按首帧动态分配 NV12 buffer
-- VIVE Tracker 在 sysfs 中自动检测，不需要 `--no-vive` 手动禁用
+- VIVE Tracker 在 sysfs 中自动检测，不需要手动禁用

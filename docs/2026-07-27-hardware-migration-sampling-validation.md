@@ -2,12 +2,12 @@
 
 ## Scope
 
-- Canonical IMU headers now live in `hardware/IMU/`:
-  `imu_decode.h`, `ImuSensor.h`.
-- Canonical camera pipeline headers now live in `hardware/VideoSensor/`:
-  `VideoSensor.h`, `SixCamSensor.h`, `bgr2nv12.h`, `mpp_encoder.h`.
-- Root-level copies of those six headers were removed. `main.cpp` and the
-  Makefile only reference the hardware paths.
+- Canonical IMU headers now live in `hardware/imu/`:
+  `imu_decode.h`, `imu_sensor.h`.
+- Canonical camera pipeline headers now live in `hardware/video/`:
+  `video_sensor.h`, `sixcam_sensor.h`, `bgr2nv12.h`, `mpp_encoder.h`.
+- Root-level copies of those six headers were removed. The production source
+  files and Makefile only reference the hardware paths.
 
 ## Fixed Issue: Existing SD Output Directory Prevented Capture
 

@@ -2,7 +2,7 @@
 
 > Unix Domain Socket 控制接口参考
 >
-> 本文以当前 `main.cpp` 实现为准。
+> 本文以当前 `app/runtime.cpp` 与 `app/socket_server.cpp` 实现为准。
 
 ## 架构与生命周期
 
@@ -158,9 +158,10 @@ done
 
 ## 相关文件
 
-- [`../main.cpp`](../main.cpp) — Socket 建立、命令处理与主线程 `poll()` 循环。
+- [`../app/runtime.cpp`](../app/runtime.cpp) — Socket 生命周期、命令处理与主线程 `poll()` 循环。
+- [`../app/socket_server.cpp`](../app/socket_server.cpp) — Socket 建立与文本命令解析。
 - [`../tests/test_socket.sh`](../tests/test_socket.sh) — Socket 协议验收脚本。
-- [`../unified_capture.service`](../unified_capture.service) — systemd 服务定义。
+- [`../deploy/unified_capture.service`](../deploy/unified_capture.service) — systemd 服务定义。
 
 ## 变更记录
 
