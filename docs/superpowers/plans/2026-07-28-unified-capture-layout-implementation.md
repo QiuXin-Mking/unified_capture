@@ -439,8 +439,7 @@ git commit -m "refactor: split runtime control from main"
 ## Task 5: 更新部署、用户文档和仍有效的源码链接
 
 **Files:**
-- Modify: `README.md`, `CLAUDE.md`, `tests/README.md`, `docs/socket-control.md`, `docs/2026-07-27-hardware-migration-sampling-validation.md`, `docs/decisions/2026-07-23-use-mkv-for-capture-video.md`
-- Move already completed: `deploy/unified_capture.service`
+- Modify: `README.md`, `CLAUDE.md`, `tests/README.md`, `deploy/unified_capture.service`, `docs/socket-control.md`, `docs/2026-07-27-hardware-migration-sampling-validation.md`, `docs/decisions/2026-07-23-use-mkv-for-capture-video.md`
 - Test: `tests/test_source_layout.sh`
 
 **Interfaces:**
@@ -449,7 +448,7 @@ git commit -m "refactor: split runtime control from main"
 
 - [ ] **Step 1: 更新 README 到实际运行接口。**
 
-依赖和交叉编译变量统一为 `NORI_INC`、`NORI_LIB`；保留当前 `.y8` 摄像头灰度输出与 IMU/编码器/Tracker JSONL 描述；从参数表删除 `--no-vive`；文件说明替换为 `app/`、`core/`、`hardware/`、`tests/`、`deploy/` 职责表；服务复制命令改为 `cp deploy/unified_capture.service /etc/systemd/system/`。socket 示例不变。
+依赖和交叉编译变量统一为 `NORI_INC`、`NORI_LIB`；保留当前 `.y8` 摄像头灰度输出与 IMU/编码器/Tracker JSONL 描述；从参数表删除 `--no-vive`；文件说明替换为 `app/`、`core/`、`hardware/`、`tests/`、`deploy/` 职责表；服务复制命令改为 `cp deploy/unified_capture.service /etc/systemd/system/`。将 unit 的 `ExecStart` 设为 `/usr/local/bin/unified_capture --socket --single /media/usb0/capture`，去除无效的 `--no-vive` 并使用强制要求的 SD 卡采集根目录。socket 示例不变。用户于 2026-07-28 批准该部署行为修正。
 
 - [ ] **Step 2: 更新项目指导和测试说明。**
 

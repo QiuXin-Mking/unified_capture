@@ -64,7 +64,7 @@ Makefile 和 CMake 都是受支持入口，必须引用同一组源文件并使�
 
 Makefile 改为从 `app/`、`hardware/common/`、`hardware/video/` 和 `hardware/tracker/` 显式列出 C++ 源文件，并将对象文件输出至受忽略的 `build/obj/`；C 源 `hardware/as5600/as5600.c` 继续用 C11 编译。依赖通过编译器生成的 `.d` 文件跟踪，替代当前手写且会随移动失效的长依赖行。默认目标仍输出根目录的 `./unified_capture`，保留 `make`、`make scan` 和已有测试 target 名。
 
-CMake 改为匹配同一源清单、语言标准、依赖和可选 libsurvive 配置；它不再保留一个可配置却无法构建当前源码的旧 SDK 版本。`deploy/unified_capture.service` 移动后，README 的部署命令改为从该路径复制；unit 中的运行命令保持原样。
+CMake 改为匹配同一源清单、语言标准、依赖和可选 libsurvive 配置；它不再保留一个可配置却无法构建当前源码的旧 SDK 版本。`deploy/unified_capture.service` 移动后，README 的部署命令改为从该路径复制；用户于 2026-07-28 批准 unit 的 `ExecStart` 更新为 `--socket --single /media/usb0/capture`，以删除未实现的 `--no-vive` 并满足 SD 卡输出限制。
 
 ## 测试、文档与失败处理
 
