@@ -24,6 +24,7 @@ struct DeviceEntry {
 
 CameraDiscoveryResult initial_result() {
     CameraDiscoveryResult result;
+    result.sixcam.enabled = true;
     result.jhh2 = {{
         {{"jhh2_left", kJhh2Vid, kJhh2Pid, 0, 3840, 1200, 30, 16000000, 30,
           true, ImuOrientation::HORIZONTAL_TOP, true, true, -1}, true},
