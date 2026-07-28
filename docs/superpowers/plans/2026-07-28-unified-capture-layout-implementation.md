@@ -464,8 +464,10 @@ git commit -m "refactor: split runtime control from main"
 Run: `sh tests/test_source_layout.sh`
 Expected: exit 0。
 
-Run: `! rg -n 'hardware/(IMU|VideoSensor)|\]\(\.\./main\.cpp\)|\]\(\.\./unified_capture\.service\)' README.md CLAUDE.md tests docs/socket-control.md docs/2026-07-27-hardware-migration-sampling-validation.md docs/decisions/2026-07-23-use-mkv-for-capture-video.md`
+Run: `! rg -n 'hardware/(IMU|VideoSensor)|\]\(\.\./main\.cpp\)|\]\(\.\./unified_capture\.service\)' README.md CLAUDE.md tests/README.md docs/socket-control.md docs/2026-07-27-hardware-migration-sampling-validation.md docs/decisions/2026-07-23-use-mkv-for-capture-video.md`
 Expected: exit 0。
+
+`tests/test_source_layout.sh` 有意包含旧硬件目录字面量，用来断言它们未被追踪；用户于 2026-07-28 批准将该脚本排除在文档残留扫描之外。
 
 - [ ] **Step 5: 检查并提交。**
 
