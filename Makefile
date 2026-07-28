@@ -111,4 +111,5 @@ help:
 	@echo "  MPP_INC    Rockchip MPP include path (default: /usr/include/rockchip)"
 	@echo ""
 	@echo "Cross-compile:"
-	@echo "  make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \\\n+	       NORI_INC=/path/to/nori/include NORI_LIB=/path/to/nori/lib"
+	@echo '  make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \'
+	@echo '       NORI_INC=/path/to/nori/include NORI_LIB=/path/to/nori/lib'
