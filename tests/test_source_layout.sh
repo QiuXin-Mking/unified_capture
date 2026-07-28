@@ -11,8 +11,10 @@ done
 ! grep -Eq '#include "(hardware/|app/(gpio_control|session_runner|socket_server)\.h")' app/main.cpp
 ! grep -Eq '_exit|Nori_Xvision|gpiod_|socket\(|accept\(|poll\(|VideoSensor|SixCamSensor|ImuSensor' app/main.cpp
 
-sed -n '/CameraDiscoveryResult discover_mango_cameras()/,/std::vector<DeviceEntry>/p' \
-	 hardware/video/device_discovery.cpp | grep -Fq 'Nori_Xvision_UnInit();'
+for profile in mango banana; do
+	sed -n "/CameraDiscoveryResult discover_${profile}_cameras/,/std::vector/p" \
+		 hardware/video/device_discovery.cpp | grep -Fq 'Nori_Xvision_UnInit();'
+done
 
 help_output=$(make help)
 printf '%s\n' "$help_output" | grep -Fqx '  make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \'

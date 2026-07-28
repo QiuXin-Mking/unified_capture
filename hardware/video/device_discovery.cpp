@@ -147,6 +147,11 @@ CameraDiscoveryResult discover_banana_cameras(
     }
 
     printf("Nori Xvision SDK: found %u device(s)\n", total_devices);
+    if (total_devices == 0) {
+        Nori_Xvision_UnInit();
+        result.degraded = configuration.wrist.allow_missing_devices;
+        return result;
+    }
     std::vector<WristDeviceInfo> inventory;
     inventory.reserve(total_devices);
     for (uint32_t i = 0; i < total_devices; ++i) {
