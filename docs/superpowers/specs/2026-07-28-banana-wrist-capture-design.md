@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-28
 **Status:** Approved for implementation
-**Scope:** Add the `banana` product profile to `unified_capture` without changing the existing `apple` capture topology.
+**Scope:** Add the `banana` product profile to `unified_capture` without changing the existing `mango` capture topology.
 
 ## Goal
 
@@ -13,9 +13,9 @@ The current hardware has only the two wrist cameras.  The design reserves a futu
 ## Confirmed decisions
 
 - The selected product is read before Nori SDK initialization.
-- `/etc/unified_capture/product.conf` selects either `apple` or `banana` with a single `product=<name>` entry.
+- `/etc/unified_capture/product.conf` selects either `mango` or `banana` with a single `product=<name>` entry.
 - `/etc/unified_capture/camera-map.conf` is a separate, editable mapping from product profile and logical camera name to Nori `iProduct` value.
-- `apple` retains the existing independent JHH2 and SixCam behavior.
+- `mango` retains the existing independent JHH2 and SixCam behavior.
 - `banana` records H.265 MKV, not raw MJPEG MKV.
 - The source camera delivers MJPEG.  The camera thread decodes it to BGR once, encodes the BGR-derived NV12 to H.265, and puts a bounded BGR copy on a separate IMU queue.
 - Wrist IMU code is located at the left edge of the image and uses `ImuOrientation::VERTICAL_LEFT`.
@@ -45,7 +45,7 @@ wrist_left.product=SL
 wrist_right.product=JHHSW
 head.enabled=false
 
-[apple]
+[mango]
 profile=legacy_head
 ```
 
@@ -63,7 +63,7 @@ ProductConfig ----> Runtime ----> selected product profile
                                       |
                +----------------------+------------------+
                |                                         |
-             apple                                     banana
+             mango                                     banana
           existing discovery                hardware/wrist discovery
                                                      |
                                             wrist_left / wrist_right slots
@@ -130,7 +130,7 @@ The `status` response keeps the existing fields and adds `product`, `degraded`, 
 
 Duplicate matches and unsupported formats make the affected logical slot unavailable rather than assigning a potentially wrong camera.  They are reported through `camera_errors` and do not prevent other available slots from recording when degraded operation is enabled.
 
-Missing or malformed product configuration, an unknown product, or an invalid camera-map file prevents service startup.  The legacy Apple profile remains strict unless its own map section explicitly enables degraded operation.
+Missing or malformed product configuration, an unknown product, or an invalid camera-map file prevents service startup.  The legacy mango profile remains strict unless its own map section explicitly enables degraded operation.
 
 ## Error isolation
 
@@ -160,5 +160,5 @@ RK3588 acceptance requires:
 ## Non-goals
 
 - Do not attach banana head cameras in this change.
-- Do not replace or rewrite Apple camera discovery, SixCam sequencing, AS5600, or VIVE behavior.
+- Do not replace or rewrite mango camera discovery, SixCam sequencing, AS5600, or VIVE behavior.
 - Do not add a raw MJPEG recording format or offline IMU decode phase for banana.
