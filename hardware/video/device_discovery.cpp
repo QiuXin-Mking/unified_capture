@@ -1,6 +1,8 @@
 #include "hardware/video/device_discovery.h"
+#include "hardware/wrist/wrist_discovery.h"
 
 #include <cstdio>
+#include <string>
 #include <vector>
 
 extern "C" {
@@ -34,31 +36,7 @@ CameraDiscoveryResult initial_result() {
     return result;
 }
 
-}  // namespace
-
-void scan_devices() {
-    uint32_t count = 0;
-    uint32_t ret = Nori_Xvision_Init(NORI_USB_DEVICE, &count);
-    if (ret != NORI_OK) {
-        printf("Nori_Xvision_Init failed: 0x%x\n", ret);
-        return;
-    }
-    printf("Found %u device(s):\n", count);
-    for (uint32_t i = 0; i < count; i++) {
-        DEVICE_INFO info;
-        Nori_Xvision_GetDeviceInfo(i, &info);
-        printf("  [%u] %04x:%04x \"%s\" \"%s\" %s\n",
-               i, info.idVendor, info.idProduct,
-               info.iManufacturer, info.iProduct, info.device);
-        VERSION_INFO ver;
-        if (Nori_Xvision_GetVersion(i, &ver) == NORI_OK) {
-            printf("       SDK:%s  Type:%s\n", ver.SDKVersion, ver.DeviceType);
-        }
-    }
-    Nori_Xvision_UnInit();
-}
-
-CameraDiscoveryResult discover_cameras() {
+CameraDiscoveryResult discover_mango_cameras() {
     CameraDiscoveryResult result = initial_result();
 
     uint32_t total_devices = 0;
@@ -69,7 +47,6 @@ CameraDiscoveryResult discover_cameras() {
     }
     printf("Nori Xvision SDK: found %u device(s)\n", total_devices);
     if (total_devices == 0) {
-        Nori_Xvision_UnInit();
         return result;
     }
 
@@ -146,4 +123,116 @@ CameraDiscoveryResult discover_cameras() {
         }
     }
     return result;
+}
+
+std::string device_product_name(const DEVICE_INFO& info) {
+    return std::string(reinterpret_cast<const char*>(info.iProduct));
+}
+
+CameraDiscoveryResult discover_banana_cameras(
+    const ProductConfiguration& configuration) {
+    CameraDiscoveryResult result;
+    result.profile = ProductProfile::banana;
+
+    uint32_t total_devices = 0;
+    uint32_t ret = Nori_Xvision_Init(NORI_USB_DEVICE, &total_devices);
+    if (ret != NORI_OK) {
+        char error[96];
+        snprintf(error, sizeof(error), "Nori_Xvision_Init failed: 0x%x", ret);
+        result.camera_errors.emplace_back(error);
+        result.degraded = configuration.wrist.allow_missing_devices;
+        fprintf(stderr, "ERROR: %s\n", error);
+        return result;
+    }
+
+    printf("Nori Xvision SDK: found %u device(s)\n", total_devices);
+    std::vector<WristDeviceInfo> inventory;
+    inventory.reserve(total_devices);
+    for (uint32_t i = 0; i < total_devices; ++i) {
+        DEVICE_INFO info{};
+        if (Nori_Xvision_GetDeviceInfo(i, &info) != NORI_OK) {
+            fprintf(stderr, "WARN: unable to read Device[%u] information\n", i);
+            continue;
+        }
+
+        WristDeviceInfo device;
+        device.device_id = i;
+        device.vid = info.idVendor;
+        device.pid = info.idProduct;
+        device.product = device_product_name(info);
+
+        uint32_t format_count = 0;
+        uint32_t format_ret = Nori_Xvision_GetDeviceVideoInfoSize(
+            device.device_id, &format_count);
+        if (format_ret != NORI_OK) {
+            fprintf(stderr, "WARN: Device[%u] format count failed: 0x%x\n",
+                    device.device_id, format_ret);
+        } else {
+            device.formats.reserve(format_count);
+            for (uint32_t format_index = 0; format_index < format_count;
+                 ++format_index) {
+                VIDEO_INFO format{};
+                format_ret = Nori_Xvision_GetDeviceVideoInfo(
+                    device.device_id, format_index, &format);
+                if (format_ret != NORI_OK) {
+                    fprintf(stderr,
+                            "WARN: Device[%u] format[%u] failed: 0x%x\n",
+                            device.device_id, format_index, format_ret);
+                    continue;
+                }
+                device.formats.push_back(
+                    {format.u_Format == VIDEO_MEDIA_TYPE_MJPG,
+                     static_cast<int>(format.u_Width),
+                     static_cast<int>(format.u_Height),
+                     static_cast<int>(format.f_Fps)});
+            }
+        }
+
+        printf("  Device[%u]: %04x:%04x product=\"%s\" formats=%zu\n",
+               device.device_id, device.vid, device.pid,
+               device.product.c_str(), device.formats.size());
+        inventory.push_back(std::move(device));
+    }
+
+    WristDiscoveryResult wrist =
+        match_wrist_cameras(configuration.wrist, inventory);
+    for (std::size_t i = 0; i < result.wrist.size(); ++i) {
+        result.wrist[i].config = wrist.cameras[i].config;
+        result.wrist[i].enabled = wrist.cameras[i].available;
+    }
+    result.degraded = wrist.degraded;
+    result.camera_errors = std::move(wrist.errors);
+    result.active_count = wrist.active_count;
+    return result;
+}
+
+}  // namespace
+
+void scan_devices() {
+    uint32_t count = 0;
+    uint32_t ret = Nori_Xvision_Init(NORI_USB_DEVICE, &count);
+    if (ret != NORI_OK) {
+        printf("Nori_Xvision_Init failed: 0x%x\n", ret);
+        return;
+    }
+    printf("Found %u device(s):\n", count);
+    for (uint32_t i = 0; i < count; i++) {
+        DEVICE_INFO info;
+        Nori_Xvision_GetDeviceInfo(i, &info);
+        printf("  [%u] %04x:%04x \"%s\" \"%s\" %s\n",
+               i, info.idVendor, info.idProduct,
+               info.iManufacturer, info.iProduct, info.device);
+        VERSION_INFO ver;
+        if (Nori_Xvision_GetVersion(i, &ver) == NORI_OK) {
+            printf("       SDK:%s  Type:%s\n", ver.SDKVersion, ver.DeviceType);
+        }
+    }
+    Nori_Xvision_UnInit();
+}
+
+CameraDiscoveryResult discover_cameras(const ProductConfiguration& configuration) {
+    if (configuration.profile == ProductProfile::banana) {
+        return discover_banana_cameras(configuration);
+    }
+    return discover_mango_cameras();
 }

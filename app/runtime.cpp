@@ -4,6 +4,7 @@
 #include "app/session_runner.h"
 #include "app/socket_server.h"
 #include "core/output_path.h"
+#include "core/product_config.h"
 #include "core/time_utils.h"
 #include "hardware/tracker/vive_usb.h"
 #include "hardware/video/device_discovery.h"
@@ -55,7 +56,8 @@ int Runtime::run() {
         printf("[note] H.265 disabled (--no-h265), output Y8 only\n");
     }
 
-    CameraDiscoveryResult cameras = discover_cameras();
+    const ProductConfiguration configuration;
+    CameraDiscoveryResult cameras = discover_cameras(configuration);
     if (cameras.active_count <= 0) {
         fprintf(stderr, "ERROR: No cameras\n");
         return 1;
