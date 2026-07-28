@@ -1,14 +1,6 @@
-# Makefile — 简易构建 (替代 CMake)
+# Makefile — unified capture production build and host-only tests
 #
-# 用法:
-#   make                # 编译
-#   make clean          # 清理
-#   make scan           # 扫描设备
-#
-# 编译前确认:
-#   1. Nori Xvision SDK 已安装, Nori_Xvision_API.h 在 include 路径中
-#   2. Rockchip MPP 已安装
-#   3. libturbojpeg-dev, libgpiod-dev 已安装
+# Production builds require the Nori SDK, Rockchip MPP, and libsurvive.
 
 CXX      ?= g++
 CC       ?= gcc
@@ -16,12 +8,12 @@ CXXFLAGS := -std=c++20 -Wall -g -O2 -pthread
 CFLAGS   := -std=gnu11 -Wall -g -O2
 LDFLAGS  := -lNori_Xvision_Std -lrockchip_mpp -lturbojpeg -lgpiod -lsurvive -lpthread -lrt -ludev -lm
 
-# Nori Xvision SDK 路径 (按需调整)
+# Nori Xvision SDK paths (override as needed).
 NORI_INC ?= /usr/local/Nori_Xvision/include
 NORI_LIB ?= /usr/local/Nori_Xvision/lib
 MPP_INC  ?= /usr/include/rockchip
 
-# libsurvive 路径
+# libsurvive path (override as needed).
 SURVIVE_DIR ?= /root/projects/libsurvive
 
 INCLUDES := -I. \
@@ -35,64 +27,72 @@ INCLUDES := -I. \
 
 LIBS     := -L$(NORI_LIB) -L$(SURVIVE_DIR)/bin \
 	-Wl,-rpath,$(NORI_LIB) \
-		-Wl,-rpath,$(SURVIVE_DIR)/bin \
+	-Wl,-rpath,$(SURVIVE_DIR)/bin \
 	$(LDFLAGS)
 
-TARGET   := unified_capture
-OBJS     := main.o hardware/common/sensor.o hardware/as5600/as5600.o
+TARGET := unified_capture
+CPP_SOURCES := app/main.cpp hardware/common/sensor.cpp
+C_SOURCES := hardware/as5600/as5600.c
+CPP_OBJECTS := $(patsubst %.cpp,build/obj/%.o,$(CPP_SOURCES))
+C_OBJECTS := $(patsubst %.c,build/obj/%.o,$(C_SOURCES))
+OBJS := $(CPP_OBJECTS) $(C_OBJECTS)
+DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean scan test_hardware_header_layout test_time_utils
+.PHONY: all clean scan test test_output_path test_time_utils test_source_layout help
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
-main.o: main.cpp hardware/common/sensor.h camera_config.h barrier.h time_utils.h output_path.h \
-        hardware/VideoSensor/VideoSensor.h hardware/VideoSensor/SixCamSensor.h \
-        hardware/VideoSensor/bgr2nv12.h hardware/VideoSensor/mpp_encoder.h \
-        hardware/IMU/ImuSensor.h hardware/IMU/imu_decode.h hardware/as5600/encoder_sensor.h \
-        hardware/tracker/ViveTrackerSensor.h hardware/tracker/resample_grid.h \
-        frame_queue.h vive_usb.h hardware/as5600/as5600.h
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ main.cpp
+build/obj/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -MMD -MP -c -o $@ $<
 
-hardware/common/sensor.o: hardware/common/sensor.cpp hardware/common/sensor.h barrier.h time_utils.h
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ hardware/common/sensor.cpp
+build/obj/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP -c -o $@ $<
 
-hardware/as5600/as5600.o: hardware/as5600/as5600.c hardware/as5600/as5600.h
-	$(CC) $(CFLAGS) $(INCLUDES) -c -o $@ hardware/as5600/as5600.c
+-include $(DEPS)
 
 scan: $(TARGET)
 	./$(TARGET) --scan
 
+test: test_output_path test_time_utils test_source_layout
+
+test_output_path: build/tests/test_output_path
+	./$<
+
+build/tests/test_output_path: tests/test_output_path.cpp core/output_path.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+test_time_utils: build/tests/test_time_utils
+	./$<
+
+build/tests/test_time_utils: tests/test_time_utils.cpp core/time_utils.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+test_source_layout:
+	sh tests/test_source_layout.sh
+
 clean:
-	rm -f $(TARGET) $(OBJS)
-
-test_output_path: test_output_path.cpp output_path.h
-	$(CXX) $(CXXFLAGS) -o $@ test_output_path.cpp
-
-test_hardware_header_layout:
-	sh tests/test_hardware_header_layout.sh
-
-test_time_utils: test_time_utils.cpp time_utils.h
-	$(CXX) $(CXXFLAGS) -o $@ test_time_utils.cpp
+	rm -rf build $(TARGET)
 
 help:
 	@echo "Unified Capture Build"
 	@echo ""
 	@echo "Targets:"
-	@echo "  make        Build $(TARGET)"
-	@echo "  make scan   Build and scan Nori devices"
-	@echo "  make clean  Remove build artifacts"
+	@echo "  make                     Build $(TARGET)"
+	@echo "  make scan                Build and scan Nori devices"
+	@echo "  make test                Run host-only tests"
+	@echo "  make clean               Remove build artifacts"
 	@echo ""
 	@echo "Variables:"
-	@echo "  Nori_INC   Nori SDK header path (default: /usr/local/Nori/include)"
-	@echo "  Nori_LIB   Nori SDK lib path (default: /usr/local/Nori/lib)"
-	@echo "  MPP_INC    Rockchip MPP header path (default: /usr/include/rockchip)"
-	@echo ""
-	@echo "Build on RK3588:"
-	@echo "  make"
+	@echo "  NORI_INC   Nori SDK include path (default: /usr/local/Nori_Xvision/include)"
+	@echo "  NORI_LIB   Nori SDK library path (default: /usr/local/Nori_Xvision/lib)"
+	@echo "  MPP_INC    Rockchip MPP include path (default: /usr/include/rockchip)"
 	@echo ""
 	@echo "Cross-compile:"
-	@echo "  make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \\"
-	@echo "       Nori_INC=/path/to/tstc/include Nori_LIB=/path/to/tstc/lib"
+	@echo "  make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \\\n+	       NORI_INC=/path/to/nori/include NORI_LIB=/path/to/nori/lib"
