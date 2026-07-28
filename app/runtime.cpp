@@ -17,9 +17,7 @@
 #include <utility>
 #include <vector>
 
-extern "C" {
 #include "Nori_Xvision_API.h"
-}
 
 namespace {
 
@@ -118,6 +116,17 @@ int Runtime::run() {
         }
         Nori_Xvision_UnInit();
         return 1;
+    }
+
+    if (is_banana && options_.use_imu) {
+        bool any_imu = false;
+        for (const auto& cam : cameras.wrist) {
+            if (cam.enabled && cam.config.has_imu) any_imu = true;
+        }
+        if (!any_imu) {
+            options_.use_imu = false;
+            printf("[imu] wrist cameras have no IMU, IMU disabled\n");
+        }
     }
 
     bool use_vive = false;

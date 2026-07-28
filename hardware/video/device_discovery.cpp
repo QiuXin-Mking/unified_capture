@@ -5,9 +5,7 @@
 #include <string>
 #include <vector>
 
-extern "C" {
 #include "Nori_Xvision_API.h"
-}
 
 namespace {
 

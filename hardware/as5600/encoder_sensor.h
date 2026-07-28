@@ -8,6 +8,8 @@
 
 #include "hardware/common/sensor.h"
 
+#include <unistd.h>
+
 extern "C" {
 #include "hardware/as5600/as5600.h"
 }

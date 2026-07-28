@@ -4,9 +4,15 @@
 
 ## 板端验收
 
-- 在 RK3588 上以实际 Nori SDK、Rockchip MPP 与 libsurvive 完整编译 `unified_capture`。
-- 安装 `deploy/product.conf.example` 和 `deploy/camera-map.conf.example` 后，按 `tests/test_banana_wrist_socket.sh` 分别验证双腕、单腕和零设备降级场景。
-- 将 `SL`、`JHHSW` 替换为量产设备实际报告的精确 Nori `iProduct`（如有差异）。
+- ✅ 在 RK3588 (LubanCat-4) 上以 Nori SDK v10.00.09、Rockchip MPP 1.5.0 与 libsurvive 完整编译 `unified_capture`。
+- ✅ 安装 `deploy/product.conf.example` 和 `deploy/camera-map.conf.example` 后，通过 `test_banana_wrist_socket.sh` (CASE=two) 验证双腕场景。
+- ✅ `SL`、`JHHSW` iProduct 匹配正确（`1bcf:2d52` 相机）。
+- ✅ IMU 解码正常：腕部码带位于顶部行（横向，和 JHH2 一样），`ImuOrientation::HORIZONTAL_TOP`。
+  - 左腕: 550 IMU 样本 (103KB)、右腕: 638 IMU 样本 (118KB)，3 秒采集。
+- **编译修复**: 
+  - `encoder_sensor.h`、`imu_sensor.h` 需 `#include <unistd.h>` (GCC 10 C++20)
+  - `device_discovery.cpp`、`runtime.cpp` 移除 Nori 头文件的 `extern "C"` 包裹 (SDK 内含 C++ 头文件)
+  - `wrist_profile.cpp` 中 `has_imu=true`, `ImuOrientation::HORIZONTAL_TOP`
 
 ## 独立腕部硬件自检 demo
 

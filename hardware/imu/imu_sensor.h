@@ -8,6 +8,8 @@
 #include "core/frame_queue.h"
 #include "core/camera_config.h"
 
+#include <unistd.h>
+
 class ImuSensor : public Sensor {
 public:
     ImuSensor(const std::string& camera_name,
@@ -34,9 +36,13 @@ protected:
     }
 
     void collect() override {
+        uint64_t total_frames = 0;
+        uint64_t imu_frames = 0;
+        uint64_t total_bytes = 0;
         while (running_ || !queue_.empty()) {
             BGRFrame frame;
             if (queue_.try_pop(frame)) {
+                total_frames++;
                 if (fp_ && !frame.data.empty()) {
                     uint8_t imu_buf[256] = {};
                     uint32_t imu_len = 0;
@@ -52,12 +58,17 @@ protected:
 
                     if (imu_len >= IMU_GROUP) {
                         imu_parse_and_write(imu_buf, imu_len, frame.frame_idx, fp_);
+                        imu_frames++;
+                        total_bytes += imu_len;
                     }
                 }
             } else {
                 usleep(5000);
             }
         }
+        fprintf(stderr, "[%s] IMU: %llu frames scanned, %llu with data, %llu bytes total\n",
+                camera_name_.c_str(), (unsigned long long)total_frames,
+                (unsigned long long)imu_frames, (unsigned long long)total_bytes);
     }
 
     void teardown() override {
