@@ -33,6 +33,7 @@ LIBS     := -L$(NORI_LIB) -L$(SURVIVE_DIR)/bin \
 TARGET := unified_capture
 CPP_SOURCES := app/main.cpp app/runtime.cpp app/status_response.cpp app/socket_server.cpp \
 	app/gpio_control.cpp app/session_runner.cpp \
+	app/session_profile.cpp \
 	core/product_config.cpp hardware/common/sensor.cpp \
 	hardware/video/device_discovery.cpp \
 	hardware/wrist/wrist_profile.cpp hardware/wrist/wrist_discovery.cpp
@@ -42,7 +43,7 @@ C_OBJECTS := $(patsubst %.c,build/obj/%.o,$(C_SOURCES))
 OBJS := $(CPP_OBJECTS) $(C_OBJECTS)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean scan test test_product_config test_wrist_discovery test_status_response test_output_path test_time_utils test_video_capture_control test_socket_command test_source_layout help
+.PHONY: all clean scan test test_product_config test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_socket_command test_source_layout help
 
 all: $(TARGET)
 
@@ -62,7 +63,7 @@ build/obj/%.o: %.c
 scan: $(TARGET)
 	./$(TARGET) --scan
 
-test: test_product_config test_wrist_discovery test_status_response test_output_path test_time_utils test_video_capture_control test_socket_command test_source_layout
+test: test_product_config test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_socket_command test_source_layout
 
 test_product_config: build/tests/test_product_config
 	./$<
@@ -78,6 +79,13 @@ build/tests/test_wrist_discovery: tests/test_wrist_discovery.cpp \
 	hardware/wrist/wrist_profile.cpp hardware/wrist/wrist_discovery.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
+
+test_session_profile: build/tests/test_session_profile
+	./$<
+
+build/tests/test_session_profile: tests/test_session_profile.cpp app/session_profile.cpp app/session_profile.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_session_profile.cpp app/session_profile.cpp
 
 test_status_response: build/tests/test_status_response
 	./$<
