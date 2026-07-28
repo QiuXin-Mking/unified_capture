@@ -22,10 +22,14 @@ int main() {
         active_profile_cameras(partial_banana);
     assert(partial.size() == 1);
     assert(std::string(partial[0].config.name) == "wrist_left");
+    assert(profile_cameras_json(partial_banana) ==
+           "\"cameras\":{\"wrist_left\":true,\"wrist_right\":false}");
 
     CameraDiscoveryResult empty_banana;
     empty_banana.profile = ProductProfile::banana;
     assert(active_profile_cameras(empty_banana).empty());
+    assert(profile_cameras_json(empty_banana) ==
+           "\"cameras\":{\"wrist_left\":false,\"wrist_right\":false}");
 
     CameraDiscoveryResult mango;
     mango.profile = ProductProfile::mango;

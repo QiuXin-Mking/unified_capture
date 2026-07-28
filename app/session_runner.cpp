@@ -196,33 +196,7 @@ void SessionRunner::run(const std::string& session_dir,
 }
 
 std::string SessionRunner::cameras_json() const {
-    std::string json = "\"cameras\":{";
-    bool first = true;
-    const auto append_camera = [&](const CameraSlot& camera) {
-        if (!first) {
-            json += ",";
-        }
-        json += "\"" + std::string(camera.config.name) + "\":" +
-                (camera.enabled ? "true" : "false");
-        first = false;
-    };
-    if (cameras_.profile == ProductProfile::banana) {
-        for (const CameraSlot& camera : cameras_.wrist) {
-            append_camera(camera);
-        }
-    } else {
-        for (const CameraSlot& camera : cameras_.jhh2) {
-            append_camera(camera);
-        }
-        if (cameras_.sixcam.enabled) {
-            json += ",\"jhh04\":" +
-                    std::string(cameras_.sixcam.jhh04_id > 0 ? "true" : "false");
-            json += ",\"jhh02\":" +
-                    std::string(cameras_.sixcam.jhh02_id > 0 ? "true" : "false");
-        }
-    }
-    json += "}";
-    return json;
+    return profile_cameras_json(cameras_);
 }
 
 void SessionRunner::request_preview(std::string path) {
