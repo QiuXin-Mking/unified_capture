@@ -72,7 +72,7 @@ void SessionRunner::run(const std::string& session_dir,
              local_time.tm_hour, local_time.tm_min, local_time.tm_sec);
     std::string session_timestamp = timestamp;
 
-    std::vector<std::unique_ptr<Sensor>> sensors;
+    sensors_.clear();
 
     if (cameras_.profile == ProductProfile::banana) {
         capture_control_.reset_stream_start(0, false);
@@ -84,9 +84,9 @@ void SessionRunner::run(const std::string& session_dir,
                 config, session_dir, static_cast<uint32_t>(config.device_id),
                 session_number, session_timestamp, session_running_, capture_control_);
             VideoSensor* video_ptr = video.get();
-            sensors.push_back(std::move(video));
+            sensors_.push_back(std::move(video));
             if (options_.use_imu && config.has_imu) {
-                sensors.push_back(std::make_unique<ImuSensor>(
+                sensors_.push_back(std::make_unique<ImuSensor>(
                     config.name, session_dir, video_ptr->imu_queue(), session_number,
                     session_timestamp, config.imu_orientation, session_running_));
             }
@@ -106,13 +106,13 @@ void SessionRunner::run(const std::string& session_dir,
                 session_dir, session_number, session_timestamp, session_running_,
                 capture_control_);
             SixCamSensor* sixcam_ptr = sixcam.get();
-            sensors.push_back(std::move(sixcam));
+            sensors_.push_back(std::move(sixcam));
             if (options_.use_imu) {
-                sensors.push_back(std::make_unique<ImuSensor>(
+                sensors_.push_back(std::make_unique<ImuSensor>(
                     "jhh04", session_dir, sixcam_ptr->imu_queue_jhh04(),
                     session_number, session_timestamp,
                     ImuOrientation::HORIZONTAL_TOP, session_running_));
-                sensors.push_back(std::make_unique<ImuSensor>(
+                sensors_.push_back(std::make_unique<ImuSensor>(
                     "jhh02", session_dir, sixcam_ptr->imu_queue_jhh02(),
                     session_number, session_timestamp,
                     ImuOrientation::HORIZONTAL_TOP, session_running_));
@@ -143,9 +143,9 @@ void SessionRunner::run(const std::string& session_dir,
                 config, session_dir, static_cast<uint32_t>(config.device_id),
                 session_number, session_timestamp, session_running_, capture_control_);
             VideoSensor* video_ptr = video.get();
-            sensors.push_back(std::move(video));
+            sensors_.push_back(std::move(video));
             if (options_.use_imu && config.has_imu) {
-                sensors.push_back(std::make_unique<ImuSensor>(
+                sensors_.push_back(std::make_unique<ImuSensor>(
                     config.name, session_dir, video_ptr->imu_queue(), session_number,
                     session_timestamp, config.imu_orientation, session_running_));
             }
@@ -164,13 +164,13 @@ void SessionRunner::run(const std::string& session_dir,
                 session_dir, session_number, session_timestamp, session_running_,
                 capture_control_);
             SixCamSensor* sixcam_ptr = sixcam.get();
-            sensors.push_back(std::move(sixcam));
+            sensors_.push_back(std::move(sixcam));
             if (options_.use_imu) {
-                sensors.push_back(std::make_unique<ImuSensor>(
+                sensors_.push_back(std::make_unique<ImuSensor>(
                     "jhh04", session_dir, sixcam_ptr->imu_queue_jhh04(),
                     session_number, session_timestamp,
                     ImuOrientation::HORIZONTAL_TOP, session_running_));
-                sensors.push_back(std::make_unique<ImuSensor>(
+                sensors_.push_back(std::make_unique<ImuSensor>(
                     "jhh02", session_dir, sixcam_ptr->imu_queue_jhh02(),
                     session_number, session_timestamp,
                     ImuOrientation::HORIZONTAL_TOP, session_running_));
@@ -178,17 +178,17 @@ void SessionRunner::run(const std::string& session_dir,
         }
 
         if (options_.use_as5600) {
-            sensors.push_back(std::make_unique<EncoderSensor>(
+            sensors_.push_back(std::make_unique<EncoderSensor>(
                 kEncoderI2cPath, kEncoderI2cAddress, session_dir, session_number,
                 session_timestamp, kEncoderIntervalUs, session_running_));
         }
         if (options_.use_vive) {
-            sensors.push_back(std::make_unique<ViveTrackerSensor>(
+            sensors_.push_back(std::make_unique<ViveTrackerSensor>(
                 session_dir, session_number, session_timestamp, session_running_));
         }
     }
 
-    if (sensors.empty()) {
+    if (sensors_.empty()) {
         fprintf(stderr, "WARN: no active sensors in this session\n");
         while (session_running_) {
             if (pump) {
@@ -198,8 +198,8 @@ void SessionRunner::run(const std::string& session_dir,
         return;
     }
 
-    SimpleBarrier gate(sensors.size());
-    for (auto& sensor : sensors) {
+    SimpleBarrier gate(sensors_.size());
+    for (auto& sensor : sensors_) {
         sensor->launch(gate);
     }
 
@@ -216,10 +216,17 @@ void SessionRunner::run(const std::string& session_dir,
         }
     }
     printf("\n>>> Session %d STOP <<<\n", session_number);
-    for (auto& sensor : sensors) {
-        sensor->join();
-    }
+    wait_teardown();
     printf(">>> Session %d DONE <<<\n\n", session_number);
+}
+
+void SessionRunner::wait_teardown() {
+    for (auto& sensor : sensors_) {
+        if (sensor) {
+            sensor->join();
+        }
+    }
+    sensors_.clear();
 }
 
 std::string SessionRunner::cameras_json() const {

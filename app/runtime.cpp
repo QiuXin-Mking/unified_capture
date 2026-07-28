@@ -168,6 +168,9 @@ int Runtime::run() {
     SocketServer socket;
     socket.open();
 
+    // 前向声明, 供 handle_socket_command 中 stop 阻塞等待用
+    ControlPump pump_controls;
+
     GpioControl gpio;
     printf("\n=== Unified Capture (%d camera(s)) ===\n", cameras.active_count);
     gpio.disable_led_trigger();
@@ -201,7 +204,16 @@ int Runtime::run() {
                     "{\"ok\":false,\"error\":\"stop already scheduled\"}");
             }
             target_stop_time_ = ceil_to_next_second();
-            return std::string("{\"ok\":true}");
+            // 阻塞等待 session 真正结束 (teardown 完成, MKV 收尾)
+            while (session_running_) {
+                pump_controls(50);
+            }
+            sessions.wait_teardown();
+            const long elapsed = current_elapsed_ms(session_running_);
+            char result[64];
+            snprintf(result, sizeof(result),
+                     "{\"ok\":true,\"elapsed_ms\":%ld}", elapsed);
+            return std::string(result);
         }
 
         if (command.kind == SocketCommandKind::preview) {
@@ -232,7 +244,7 @@ int Runtime::run() {
             "{\"ok\":false,\"error\":\"unknown command\"}");
     };
 
-    ControlPump pump_controls = [&](int timeout_ms) {
+    pump_controls = [&](int timeout_ms) {
         struct pollfd descriptors[2] {};
         int count = 0;
         const int button_fd = gpio_available ? gpio.event_fd() : -1;

@@ -5,7 +5,9 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <string>
+#include <vector>
 
 struct SessionOptions {
     bool use_imu;
@@ -14,6 +16,7 @@ struct SessionOptions {
     bool use_h265;
 };
 
+class Sensor;
 using ControlPump = std::function<void(int timeout_ms)>;
 
 class SessionRunner {
@@ -26,6 +29,7 @@ public:
     void run(const std::string& session_dir,
              int session_number,
              const ControlPump& pump);
+    void wait_teardown();
     std::string cameras_json() const;
     void request_preview(std::string path);
 
@@ -34,4 +38,5 @@ private:
     SessionOptions options_;
     std::atomic<bool>& session_running_;
     VideoCaptureControl capture_control_;
+    std::vector<std::unique_ptr<Sensor>> sensors_;
 };
