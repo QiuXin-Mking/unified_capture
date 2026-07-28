@@ -18,6 +18,7 @@ void signal_handler(int) {
 
 void print_usage(const char* program) {
     printf("Usage: %s [OPTIONS] [output_prefix]\n", program);
+    printf("  --config PATH  Product configuration file\n");
 }
 
 }  // namespace
@@ -50,6 +51,12 @@ int main(int argc, char* argv[]) {
             options.use_h265 = false;
         } else if (!strcmp(argv[i], "--single")) {
             options.single_shot = true;
+        } else if (!strcmp(argv[i], "--config")) {
+            if (i + 1 >= argc) {
+                print_usage(argv[0]);
+                return 2;
+            }
+            options.product_config_path = argv[++i];
         } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             print_usage(argv[0]);
             return 0;

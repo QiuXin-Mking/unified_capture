@@ -12,6 +12,8 @@ struct RuntimeOptions {
     bool use_imu = true;
     bool use_as5600 = true;
     bool use_h265 = true;
+    std::string product_config_path = "/etc/unified_capture/product.conf";
+    std::string camera_map_path = "/etc/unified_capture/camera-map.conf";
 };
 
 class Runtime {

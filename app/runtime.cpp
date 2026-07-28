@@ -3,6 +3,7 @@
 #include "app/gpio_control.h"
 #include "app/session_runner.h"
 #include "app/socket_server.h"
+#include "app/status_response.h"
 #include "core/output_path.h"
 #include "core/product_config.h"
 #include "core/time_utils.h"
@@ -14,10 +15,44 @@
 #include <poll.h>
 #include <sys/stat.h>
 #include <utility>
+#include <vector>
 
 extern "C" {
 #include "Nori_Xvision_API.h"
 }
+
+namespace {
+
+std::vector<std::pair<std::string, bool>> status_cameras(
+    const CameraDiscoveryResult& cameras) {
+    std::vector<std::pair<std::string, bool>> result;
+    if (cameras.profile == ProductProfile::banana) {
+        result.emplace_back("wrist_left", cameras.wrist[0].enabled);
+        result.emplace_back("wrist_right", cameras.wrist[1].enabled);
+        return result;
+    }
+
+    for (const CameraSlot& camera : cameras.jhh2) {
+        result.emplace_back(camera.config.name, camera.enabled);
+    }
+    if (cameras.sixcam.enabled) {
+        result.emplace_back("jhh04", cameras.sixcam.jhh04_id > 0);
+        result.emplace_back("jhh02", cameras.sixcam.jhh02_id > 0);
+    }
+    return result;
+}
+
+long current_elapsed_ms(const std::atomic<bool>& session_running) {
+    if (!session_running) {
+        return 0;
+    }
+    struct timespec now {};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (now.tv_sec - g_t0.tv_sec) * 1000 +
+           (now.tv_nsec - g_t0.tv_nsec) / 1000000;
+}
+
+}  // namespace
 
 Runtime::Runtime(RuntimeOptions options)
     : options_(std::move(options)) {}
@@ -34,6 +69,19 @@ int Runtime::run() {
     if (options_.scan_only) {
         scan_devices();
         return 0;
+    }
+
+    ProductConfigResult configuration_result = load_product_configuration(
+        options_.product_config_path, options_.camera_map_path);
+    if (!configuration_result.configuration) {
+        fprintf(stderr, "ERROR: %s\n", configuration_result.error.c_str());
+        return 2;
+    }
+    const ProductConfiguration configuration = *configuration_result.configuration;
+    const bool is_banana = configuration.profile == ProductProfile::banana;
+    if (is_banana && !options_.use_h265) {
+        fprintf(stderr, "ERROR: banana requires H.265 output\n");
+        return 2;
     }
 
     const std::string prefix =
@@ -56,23 +104,38 @@ int Runtime::run() {
         printf("[note] H.265 disabled (--no-h265), output Y8 only\n");
     }
 
-    const ProductConfiguration configuration;
     CameraDiscoveryResult cameras = discover_cameras(configuration);
-    if (cameras.active_count <= 0) {
+    if (!is_banana && cameras.active_count <= 0) {
         fprintf(stderr, "ERROR: No cameras\n");
         return 1;
     }
-
-    int vive_count = detect_vive_trackers();
-    bool use_vive = vive_count > 0;
-    if (!use_vive) {
-        printf("[vive] no tracker detected, VIVE disabled\n");
-    } else {
-        printf("[vive] %d tracker(s) detected, VIVE enabled\n", vive_count);
+    if (is_banana && !configuration.wrist.allow_missing_devices &&
+        cameras.active_count != static_cast<int>(cameras.wrist.size())) {
+        fprintf(stderr, "ERROR: banana requires both wrist cameras\n");
+        for (const std::string& error : cameras.camera_errors) {
+            fprintf(stderr, "  %s\n", error.c_str());
+        }
+        Nori_Xvision_UnInit();
+        return 1;
     }
 
+    bool use_vive = false;
+    if (is_banana) {
+        printf("[vive] banana profile, VIVE disabled\n");
+    } else {
+        int vive_count = detect_vive_trackers();
+        use_vive = vive_count > 0;
+        if (!use_vive) {
+            printf("[vive] no tracker detected, VIVE disabled\n");
+        } else {
+            printf("[vive] %d tracker(s) detected, VIVE enabled\n", vive_count);
+        }
+    }
+
+    const bool use_as5600 = is_banana ? false : options_.use_as5600;
+
     SessionOptions session_options{
-        options_.use_imu, options_.use_as5600, use_vive, options_.use_h265};
+        options_.use_imu, use_as5600, use_vive, options_.use_h265};
     SessionRunner sessions(cameras, session_options, session_running_);
 
     bool ready = true;
@@ -109,11 +172,7 @@ int Runtime::run() {
                 return std::string(
                     "{\"ok\":false,\"error\":\"not running\"}");
             }
-            struct timespec now {};
-            clock_gettime(CLOCK_MONOTONIC, &now);
-            long elapsed =
-                (now.tv_sec - g_t0.tv_sec) * 1000 +
-                (now.tv_nsec - g_t0.tv_nsec) / 1000000;
+            const long elapsed = current_elapsed_ms(session_running_);
             session_running_ = false;
             char result[64];
             snprintf(result, sizeof(result),
@@ -131,39 +190,18 @@ int Runtime::run() {
         }
 
         if (command.kind == SocketCommandKind::status) {
-            if (!ready) {
-                char result[512];
-                snprintf(
-                    result, sizeof(result),
-                    "{\"ok\":true,\"ready\":false,\"running\":false,"
-                    "\"session\":null,\"elapsed_ms\":0,\"cameras\":{},"
-                    "\"imu\":%s,\"as5600\":%s,\"vive\":%s}",
-                    options_.use_imu ? "true" : "false",
-                    options_.use_as5600 ? "true" : "false",
-                    use_vive ? "true" : "false");
-                return std::string(result);
-            }
-
-            long elapsed = 0;
-            if (session_running_) {
-                struct timespec now {};
-                clock_gettime(CLOCK_MONOTONIC, &now);
-                elapsed =
-                    (now.tv_sec - g_t0.tv_sec) * 1000 +
-                    (now.tv_nsec - g_t0.tv_nsec) / 1000000;
-            }
-            char result[1024];
-            snprintf(
-                result, sizeof(result),
-                "{\"ok\":true,\"ready\":true,\"running\":%s,"
-                "\"session\":null,\"elapsed_ms\":%ld,%s,\"imu\":%s,"
-                "\"as5600\":%s,\"vive\":%s}",
-                session_running_ ? "true" : "false", elapsed,
-                sessions.cameras_json().c_str(),
-                options_.use_imu ? "true" : "false",
-                options_.use_as5600 ? "true" : "false",
-                use_vive ? "true" : "false");
-            return std::string(result);
+            CaptureStatusResponse status{
+                std::string(product_profile_name(configuration.profile)),
+                ready,
+                cameras.degraded,
+                session_running_,
+                current_elapsed_ms(session_running_),
+                status_cameras(cameras),
+                cameras.camera_errors,
+                options_.use_imu,
+                use_as5600,
+                use_vive};
+            return make_capture_status_json(status);
         }
 
         return std::string(

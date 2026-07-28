@@ -16,6 +16,7 @@ set(SURVIVE_DIR "/root/projects/libsurvive" CACHE PATH "libsurvive source and ru
 add_executable(unified_capture
     app/main.cpp
     app/runtime.cpp
+    app/status_response.cpp
     app/socket_server.cpp
     app/gpio_control.cpp
     app/session_runner.cpp
