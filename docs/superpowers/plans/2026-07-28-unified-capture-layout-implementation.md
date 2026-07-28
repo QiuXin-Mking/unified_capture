@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 保持 `./unified_capture`、既有参数、socket 文本协议、GPIO 行为、传感器线程数和输出文件格式不变。
+- 保持 `./unified_capture`、既有参数、socket 文本协议、GPIO 行为、传感器线程数和输出文件格式不变；用户于 2026-07-28 授权例外：SIGSEGV/SIGABRT 与 SIGINT/SIGTERM 一样只请求 Runtime 停止，不再调用 `_exit(1)`。
 - 保持 `--scan`、`--no-gpio`、`--socket`、`--no-as5600`、`--no-imu`、`--no-h265`、`--single`、`-h/--help`；README 不再声明当前未实现的 `--no-vive`。
 - 输出继续限制在 `/media/usb0/capture`；Nori 初始化在进程退出时调用一次 `Nori_Xvision_UnInit()`。
 - `core/` 不得包含 Nori、MPP、libsurvive、gpiod 或 AS5600 头文件；依赖只能是 `app → {core, hardware}` 和 `hardware → core`。
