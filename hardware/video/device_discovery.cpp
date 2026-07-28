@@ -47,6 +47,7 @@ CameraDiscoveryResult discover_mango_cameras() {
     }
     printf("Nori Xvision SDK: found %u device(s)\n", total_devices);
     if (total_devices == 0) {
+        Nori_Xvision_UnInit();
         return result;
     }
 
