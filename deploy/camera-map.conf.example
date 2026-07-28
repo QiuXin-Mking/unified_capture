@@ -1,0 +1,10 @@
+# Install this file to /etc/unified_capture/camera-map.conf.
+# SL and JHHSW are editable exact Nori iProduct matches.
+[banana]
+allow_missing_devices=true
+wrist_left.product=SL
+wrist_right.product=JHHSW
+head.enabled=false
+
+[mango]
+profile=legacy_head

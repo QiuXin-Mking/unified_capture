@@ -19,6 +19,7 @@ add_executable(unified_capture
     app/socket_server.cpp
     app/gpio_control.cpp
     app/session_runner.cpp
+    core/product_config.cpp
     hardware/common/sensor.cpp
     hardware/video/device_discovery.cpp
     hardware/as5600/as5600.c
