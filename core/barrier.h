@@ -17,8 +17,10 @@ public:
         if (++arrived_ == count_) {
             arrived_ = 0;
             generation_++;
+            // 把所有正在 wait() 的线程叫醒，不释放锁，只是发个信号。
             cv_.notify_all();
         } else {
+            // gen 是值捕获， 表示barrier 的代次，防止虚假唤醒。只要 generation 变了，就说明这一轮结束了
             cv_.wait(lock, [this, gen] { return gen != generation_; });
         }
     }
