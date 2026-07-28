@@ -24,6 +24,7 @@ public:
     SessionRunner(const CameraDiscoveryResult& cameras,
                   SessionOptions options,
                   std::atomic<bool>& session_running);
+    ~SessionRunner();
 
     std::string make_session_dir(const std::string& prefix, int session_number) const;
     void run(const std::string& session_dir,

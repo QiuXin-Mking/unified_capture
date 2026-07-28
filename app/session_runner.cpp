@@ -38,6 +38,8 @@ SessionRunner::SessionRunner(const CameraDiscoveryResult& cameras,
     , options_(options)
     , session_running_(session_running) {}
 
+SessionRunner::~SessionRunner() = default;
+
 std::string SessionRunner::make_session_dir(const std::string& prefix,
                                             int session_number) const {
     char path[256];
