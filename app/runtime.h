@@ -1,6 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
+#include <optional>
 #include <string>
 
 struct RuntimeOptions {
@@ -28,4 +30,8 @@ private:
     RuntimeOptions options_;
     std::atomic<bool> keep_running_{true};
     std::atomic<bool> session_running_{false};
+
+    // 整秒对齐启停
+    std::optional<std::chrono::steady_clock::time_point> target_start_time_;
+    std::optional<std::chrono::steady_clock::time_point> target_stop_time_;
 };

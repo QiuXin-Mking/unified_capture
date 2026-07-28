@@ -50,6 +50,15 @@ long current_elapsed_ms(const std::atomic<bool>& session_running) {
            (now.tv_nsec - g_t0.tv_nsec) / 1000000;
 }
 
+// ceil(now) + 1 秒  → 保证至少 1 秒缓冲，避免 now=3.999s 时只等 1ms
+std::chrono::steady_clock::time_point ceil_to_next_second() {
+    using namespace std::chrono;
+    auto now = steady_clock::now();
+    auto secs = duration_cast<seconds>(now.time_since_epoch());
+    // 跳到下一整秒 + 1s 保底
+    return steady_clock::time_point(secs + seconds(2));
+}
+
 }  // namespace
 
 Runtime::Runtime(RuntimeOptions options)
@@ -149,8 +158,6 @@ int Runtime::run() {
     SessionRunner sessions(cameras, session_options, session_running_);
 
     bool ready = true;
-    bool socket_start_request = false;
-    bool button_start_request = false;
     SocketServer socket;
     socket.open();
 
@@ -173,7 +180,7 @@ int Runtime::run() {
                 return std::string(
                     "{\"ok\":false,\"error\":\"already running\"}");
             }
-            socket_start_request = true;
+            target_start_time_ = ceil_to_next_second();
             return std::string("{\"ok\":true}");
         }
 
@@ -182,12 +189,12 @@ int Runtime::run() {
                 return std::string(
                     "{\"ok\":false,\"error\":\"not running\"}");
             }
-            const long elapsed = current_elapsed_ms(session_running_);
-            session_running_ = false;
-            char result[64];
-            snprintf(result, sizeof(result),
-                     "{\"ok\":true,\"elapsed_ms\":%ld}", elapsed);
-            return std::string(result);
+            if (target_stop_time_) {
+                return std::string(
+                    "{\"ok\":false,\"error\":\"stop already scheduled\"}");
+            }
+            target_stop_time_ = ceil_to_next_second();
+            return std::string("{\"ok\":true}");
         }
 
         if (command.kind == SocketCommandKind::preview) {
@@ -253,9 +260,11 @@ int Runtime::run() {
                 ButtonEvent event = gpio.consume_event();
                 if (event == ButtonEvent::falling_edge) {
                     if (session_running_) {
-                        session_running_ = false;
+                        // 整秒对齐停止
+                        target_stop_time_ = ceil_to_next_second();
                     } else {
-                        button_start_request = true;
+                        // 整秒对齐启动
+                        target_start_time_ = ceil_to_next_second();
                     }
                 } else if (event == ButtonEvent::error) {
                     keep_running_ = false;
@@ -265,6 +274,13 @@ int Runtime::run() {
                        descriptors[i].fd == socket.fd()) {
                 socket.serve_one(handle_socket_command);
             }
+        }
+
+        // 检查是否到达整秒停止时间
+        if (target_stop_time_ &&
+            std::chrono::steady_clock::now() >= *target_stop_time_) {
+            target_stop_time_.reset();
+            session_running_ = false;
         }
     };
 
@@ -288,10 +304,14 @@ int Runtime::run() {
             if (!keep_running_) {
                 break;
             }
-            if (!socket_start_request) {
+            if (!target_start_time_) {
                 continue;
             }
-            socket_start_request = false;
+            // 等待到整秒 → sensor 同步启流
+            while (std::chrono::steady_clock::now() < *target_start_time_) {
+                pump_controls(50);
+            }
+            target_start_time_.reset();
 
             session_number++;
             session_running_ = true;
@@ -322,16 +342,14 @@ int Runtime::run() {
             if (!keep_running_) {
                 break;
             }
-
-            bool start_session = socket_start_request;
-            socket_start_request = false;
-            if (button_start_request) {
-                start_session = true;
-                button_start_request = false;
-            }
-            if (!start_session) {
+            if (!target_start_time_) {
                 continue;
             }
+            // 等待到整秒 → sensor 同步启流
+            while (std::chrono::steady_clock::now() < *target_start_time_) {
+                pump_controls(50);
+            }
+            target_start_time_.reset();
 
             session_number++;
             session_running_ = true;
