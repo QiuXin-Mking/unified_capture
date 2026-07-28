@@ -22,6 +22,8 @@ add_executable(unified_capture
     core/product_config.cpp
     hardware/common/sensor.cpp
     hardware/video/device_discovery.cpp
+    hardware/wrist/wrist_profile.cpp
+    hardware/wrist/wrist_discovery.cpp
     hardware/as5600/as5600.c
 )
 

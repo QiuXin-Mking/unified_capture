@@ -34,14 +34,15 @@ TARGET := unified_capture
 CPP_SOURCES := app/main.cpp app/runtime.cpp app/socket_server.cpp \
 	app/gpio_control.cpp app/session_runner.cpp \
 	core/product_config.cpp hardware/common/sensor.cpp \
-	hardware/video/device_discovery.cpp
+	hardware/video/device_discovery.cpp \
+	hardware/wrist/wrist_profile.cpp hardware/wrist/wrist_discovery.cpp
 C_SOURCES := hardware/as5600/as5600.c
 CPP_OBJECTS := $(patsubst %.cpp,build/obj/%.o,$(CPP_SOURCES))
 C_OBJECTS := $(patsubst %.c,build/obj/%.o,$(C_SOURCES))
 OBJS := $(CPP_OBJECTS) $(C_OBJECTS)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean scan test test_product_config test_output_path test_time_utils test_video_capture_control test_socket_command test_source_layout help
+.PHONY: all clean scan test test_product_config test_wrist_discovery test_output_path test_time_utils test_video_capture_control test_socket_command test_source_layout help
 
 all: $(TARGET)
 
@@ -61,7 +62,7 @@ build/obj/%.o: %.c
 scan: $(TARGET)
 	./$(TARGET) --scan
 
-test: test_product_config test_output_path test_time_utils test_video_capture_control test_socket_command test_source_layout
+test: test_product_config test_wrist_discovery test_output_path test_time_utils test_video_capture_control test_socket_command test_source_layout
 
 test_product_config: build/tests/test_product_config
 	./$<
@@ -69,6 +70,14 @@ test_product_config: build/tests/test_product_config
 build/tests/test_product_config: tests/test_product_config.cpp core/product_config.cpp core/product_config.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_product_config.cpp core/product_config.cpp
+
+test_wrist_discovery: build/tests/test_wrist_discovery
+	./$<
+
+build/tests/test_wrist_discovery: tests/test_wrist_discovery.cpp \
+	hardware/wrist/wrist_profile.cpp hardware/wrist/wrist_discovery.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
 test_output_path: build/tests/test_output_path
 	./$<
