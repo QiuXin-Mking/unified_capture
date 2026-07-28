@@ -10,7 +10,7 @@
  *   - FrameQueue: BGR 帧 → ImuSensor 异步消费
  */
 
-#include "../common/sensor.h"
+#include "hardware/common/sensor.h"
 
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -33,10 +33,10 @@
 // elapsed_us() / g_t0 定义在 sensor.h
 
 // ============================================================
-#include "bgr2nv12.h"
+#include "hardware/video/bgr2nv12.h"
 
-#include "mpp_encoder.h"
-#include "../../camera_config.h"
+#include "hardware/video/mpp_encoder.h"
+#include "core/camera_config.h"
 
 // ============================================================
 // 启流顺序协调 (仅 IMU 硬件依赖, 非 SDK 限制)

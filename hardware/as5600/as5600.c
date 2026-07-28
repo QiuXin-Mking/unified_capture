@@ -13,7 +13,7 @@
  *   The AS5600 latches the HI byte when LO is read.
  */
 
-#include "as5600.h"
+#include "hardware/as5600/as5600.h"
 
 #include <stdio.h>
 #include <stdlib.h>

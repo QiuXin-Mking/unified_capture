@@ -6,7 +6,7 @@
  * 采样间隔 10ms (100Hz), 输出 CSV 带 CLOCK_MONOTONIC 时间戳.
  */
 
-#include "../common/sensor.h"
+#include "hardware/common/sensor.h"
 
 extern "C" {
 #include "hardware/as5600/as5600.h"

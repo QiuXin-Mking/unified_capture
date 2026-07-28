@@ -12,8 +12,8 @@
 #include <string>
 #include <thread>
 
-#include "time_utils.h"
-#include "frame_queue.h"
+#include "core/time_utils.h"
+#include "core/frame_queue.h"
 
 class SimpleBarrier;
 

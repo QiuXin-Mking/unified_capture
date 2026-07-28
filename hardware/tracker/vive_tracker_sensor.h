@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../common/sensor.h"
-#include "resample_grid.h"
+#include "hardware/common/sensor.h"
+#include "hardware/tracker/resample_grid.h"
 #include "libsurvive/survive.h"
 
 #include <algorithm>

@@ -3,10 +3,10 @@
  * imu_sensor.h — ImuSensor: 异步 IMU 解码 (从 FrameQueue 消费 BGR 帧)
  */
 
-#include "../common/sensor.h"
-#include "imu_decode.h"
-#include "../../frame_queue.h"
-#include "../../camera_config.h"
+#include "hardware/common/sensor.h"
+#include "hardware/imu/imu_decode.h"
+#include "core/frame_queue.h"
+#include "core/camera_config.h"
 
 class ImuSensor : public Sensor {
 public:

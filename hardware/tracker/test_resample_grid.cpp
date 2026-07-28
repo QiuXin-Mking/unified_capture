@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <vector>
 
-#include "resample_grid.h"
+#include "hardware/tracker/resample_grid.h"
 
 static bool expect_equal(const std::vector<uint64_t>& actual,
                          const std::vector<uint64_t>& expected,

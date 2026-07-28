@@ -2,8 +2,8 @@
  * sensor.cpp — Sensor 基类实现
  */
 
-#include "sensor.h"
-#include "barrier.h"
+#include "hardware/common/sensor.h"
+#include "core/barrier.h"
 
 Sensor::Sensor(std::string name, std::atomic<bool>& running)
     : name_(std::move(name)), running_(running) {}

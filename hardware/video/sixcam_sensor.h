@@ -9,7 +9,7 @@
  * 启流顺序: jhh02 必须优先于 jhh04 (IMU 硬件依赖)
  */
 
-#include "../common/sensor.h"
+#include "hardware/common/sensor.h"
 
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -28,11 +28,11 @@
 
 #include "Nori_Xvision_API.h"
 
-#include "bgr2nv12.h"
-#include "mpp_encoder.h"
-#include "../../camera_config.h"
-#include "../IMU/imu_decode.h"
-#include "../../frame_queue.h"
+#include "hardware/video/bgr2nv12.h"
+#include "hardware/video/mpp_encoder.h"
+#include "core/camera_config.h"
+#include "hardware/imu/imu_decode.h"
+#include "core/frame_queue.h"
 
 // 启流顺序协调
 extern std::atomic<int> g_jhh2_remaining;   // jhh04 等待此计数器归零

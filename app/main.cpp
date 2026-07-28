@@ -21,16 +21,16 @@ extern "C" {
 #include "Nori_Xvision_API.h"
 }
 
-#include "camera_config.h"
-#include "barrier.h"
+#include "core/camera_config.h"
+#include "core/barrier.h"
 #include "hardware/common/sensor.h"
-#include "hardware/VideoSensor/VideoSensor.h"
-#include "hardware/VideoSensor/SixCamSensor.h"
-#include "hardware/IMU/ImuSensor.h"
+#include "hardware/video/video_sensor.h"
+#include "hardware/video/sixcam_sensor.h"
+#include "hardware/imu/imu_sensor.h"
 #include "hardware/as5600/encoder_sensor.h"
-#include "output_path.h"
-#include "vive_usb.h"
-#include "hardware/tracker/ViveTrackerSensor.h"
+#include "core/output_path.h"
+#include "hardware/tracker/vive_usb.h"
+#include "hardware/tracker/vive_tracker_sensor.h"
 
 // ============================================================
 // 全局状态
