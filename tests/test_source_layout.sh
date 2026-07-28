@@ -4,4 +4,4 @@ for path in app/main.cpp app/runtime.h app/runtime.cpp app/socket_server.h app/s
 for path in main.cpp barrier.h camera_config.h frame_queue.h output_path.h time_utils.h vive_usb.h unified_capture.service; do test ! -e "$path"; done
 for path in hardware/IMU hardware/VideoSensor; do ! git ls-files | grep -Fqx "$path"; done
 ! grep -Eq '#include "(hardware/|app/(gpio_control|session_runner|socket_server)\.h")' app/main.cpp
-! grep -Eq 'Nori_Xvision|gpiod_|socket\(|accept\(|poll\(|VideoSensor|SixCamSensor|ImuSensor' app/main.cpp
+! grep -Eq '_exit|Nori_Xvision|gpiod_|socket\(|accept\(|poll\(|VideoSensor|SixCamSensor|ImuSensor' app/main.cpp

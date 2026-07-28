@@ -3,20 +3,16 @@
 #include <csignal>
 #include <cstdio>
 #include <cstring>
-#include <unistd.h>
 #include <utility>
 
 namespace {
 
 Runtime* g_runtime = nullptr;
 
-void signal_handler(int signal) {
+void signal_handler(int) {
     if (g_runtime) {
         g_runtime->keep_running() = false;
         g_runtime->session_running() = false;
-    }
-    if (signal == SIGSEGV || signal == SIGABRT) {
-        _exit(1);
     }
 }
 
