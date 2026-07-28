@@ -73,6 +73,14 @@ WristDiscoveryResult match_wrist_cameras(
     const WristDeviceMap& device_map,
     const std::vector<WristDeviceInfo>& inventory) {
     WristDiscoveryResult result;
+    if (device_map.left_product == device_map.right_product) {
+        const std::string error =
+            "duplicate configured product mapping " + device_map.left_product;
+        mark_unavailable(&result, 0, "wrist_left: " + error);
+        mark_unavailable(&result, 1, "wrist_right: " + error);
+        result.degraded = device_map.allow_missing_devices;
+        return result;
+    }
     match_slot(&result, 0, "wrist_left", device_map.left_product, inventory,
                make_wrist_left_config);
     match_slot(&result, 1, "wrist_right", device_map.right_product, inventory,

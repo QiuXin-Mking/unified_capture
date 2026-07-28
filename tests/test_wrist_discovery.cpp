@@ -54,6 +54,17 @@ int main() {
     assert(wrong_product.cameras[0].config.device_id == -1);
     assert(wrong_product.active_count == 1);
 
+    const WristDeviceMap duplicate_mapping{true, "SL", "SL"};
+    const WristDiscoveryResult reused_device = match_wrist_cameras(
+        duplicate_mapping, {device(4, "SL", {target})});
+    assert(!reused_device.cameras[0].available);
+    assert(!reused_device.cameras[1].available);
+    assert(reused_device.active_count == 0);
+    assert(reused_device.cameras[0].error.find("duplicate") !=
+           std::string::npos);
+    assert(reused_device.cameras[1].error.find("duplicate") !=
+           std::string::npos);
+
     const WristDiscoveryResult duplicate_left = match_wrist_cameras(
         map, {device(4, "SL", {target}), device(5, "SL", {target}),
               device(9, "JHHSW", {target})});
