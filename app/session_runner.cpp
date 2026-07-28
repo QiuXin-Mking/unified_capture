@@ -78,23 +78,8 @@ void SessionRunner::run(const std::string& session_dir,
 
     if (cameras_.profile == ProductProfile::banana) {
         capture_control_.reset_stream_start(0, false);
-        for (const CameraSlot& camera : active_profile_cameras(cameras_)) {
-            CameraConfig config = camera.config;
-            config.output_h265 = true;
-            config.output_y8 = false;
-            auto video = std::make_unique<VideoSensor>(
-                config, session_dir, static_cast<uint32_t>(config.device_id),
-                session_number, session_timestamp, session_running_, capture_control_);
-            VideoSensor* video_ptr = video.get();
-            sensors_.push_back(std::move(video));
-            if (options_.use_imu && config.has_imu) {
-                sensors_.push_back(std::make_unique<ImuSensor>(
-                    config.name, session_dir, video_ptr->imu_queue(), session_number,
-                    session_timestamp, config.imu_orientation, session_running_));
-            }
-        }
 
-        // ── 六目模块 (banana sixcam) ──
+        // ── 1. 六目模块 (先四目→后双目, 硬件内部已同步) ──
         if (cameras_.sixcam.enabled && cameras_.sixcam.jhh04_id > 0 &&
             cameras_.sixcam.jhh02_id > 0) {
             CameraConfig jhh04{
@@ -118,6 +103,23 @@ void SessionRunner::run(const std::string& session_dir,
                     "jhh02", session_dir, sixcam_ptr->imu_queue_jhh02(),
                     session_number, session_timestamp,
                     ImuOrientation::HORIZONTAL_TOP, session_running_));
+            }
+        }
+
+        // ── 2. 腕部相机 (六目启流完成后) ──
+        for (const CameraSlot& camera : active_profile_cameras(cameras_)) {
+            CameraConfig config = camera.config;
+            config.output_h265 = true;
+            config.output_y8 = false;
+            auto video = std::make_unique<VideoSensor>(
+                config, session_dir, static_cast<uint32_t>(config.device_id),
+                session_number, session_timestamp, session_running_, capture_control_);
+            VideoSensor* video_ptr = video.get();
+            sensors_.push_back(std::move(video));
+            if (options_.use_imu && config.has_imu) {
+                sensors_.push_back(std::make_unique<ImuSensor>(
+                    config.name, session_dir, video_ptr->imu_queue(), session_number,
+                    session_timestamp, config.imu_orientation, session_running_));
             }
         }
     } else {
