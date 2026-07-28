@@ -162,3 +162,7 @@ RK3588 acceptance requires:
 - Do not attach banana head cameras in this change.
 - Do not replace or rewrite mango camera discovery, SixCam sequencing, AS5600, or VIVE behavior.
 - Do not add a raw MJPEG recording format or offline IMU decode phase for banana.
+
+## Deferred follow-up: wrist microphone capability
+
+Before a later audio scope is planned, verify whether each wrist camera exposes a USB audio interface and document its device identity, channel count, sample rate, and left/right association.  This change deliberately does not enumerate, record, mux, or report microphone data.  Any audio collection must be proposed and approved as a separate extension after that hardware check.
