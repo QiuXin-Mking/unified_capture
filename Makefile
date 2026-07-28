@@ -31,14 +31,15 @@ LIBS     := -L$(NORI_LIB) -L$(SURVIVE_DIR)/bin \
 	$(LDFLAGS)
 
 TARGET := unified_capture
-CPP_SOURCES := app/main.cpp hardware/common/sensor.cpp
+CPP_SOURCES := app/main.cpp app/session_runner.cpp \
+	hardware/common/sensor.cpp hardware/video/device_discovery.cpp
 C_SOURCES := hardware/as5600/as5600.c
 CPP_OBJECTS := $(patsubst %.cpp,build/obj/%.o,$(CPP_SOURCES))
 C_OBJECTS := $(patsubst %.c,build/obj/%.o,$(C_SOURCES))
 OBJS := $(CPP_OBJECTS) $(C_OBJECTS)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean scan test test_output_path test_time_utils test_source_layout help
+.PHONY: all clean scan test test_output_path test_time_utils test_video_capture_control test_source_layout help
 
 all: $(TARGET)
 
@@ -58,7 +59,7 @@ build/obj/%.o: %.c
 scan: $(TARGET)
 	./$(TARGET) --scan
 
-test: test_output_path test_time_utils test_source_layout
+test: test_output_path test_time_utils test_video_capture_control test_source_layout
 
 test_output_path: build/tests/test_output_path
 	./$<
@@ -71,6 +72,13 @@ test_time_utils: build/tests/test_time_utils
 	./$<
 
 build/tests/test_time_utils: tests/test_time_utils.cpp core/time_utils.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+test_video_capture_control: build/tests/test_video_capture_control
+	./$<
+
+build/tests/test_video_capture_control: tests/test_video_capture_control.cpp hardware/video/capture_control.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
 

@@ -36,18 +36,8 @@
 #include "hardware/video/bgr2nv12.h"
 
 #include "hardware/video/mpp_encoder.h"
+#include "hardware/video/capture_control.h"
 #include "core/camera_config.h"
-
-// ============================================================
-// 启流顺序协调 (仅 IMU 硬件依赖, 非 SDK 限制)
-// ============================================================
-extern std::atomic<int> g_jhh2_remaining;   // jhh04 等待此计数器归零
-extern std::atomic<bool> g_jhh02_init_done; // 独立JHH2等六目jhh02先启流
-
-// Preview JPEG export globals (defined in main.cpp)
-extern std::atomic<bool> g_preview_pending;
-extern std::string g_preview_path;
-extern std::mutex g_preview_mutex;
 
 class VideoSensor : public Sensor {
 public:
@@ -56,13 +46,15 @@ public:
                 uint32_t device_id,
                 int session_num,
                 const std::string& session_ts,
-                std::atomic<bool>& running)
+                std::atomic<bool>& running,
+                VideoCaptureControl& control)
         : Sensor(cfg.name, running)
         , cfg_(cfg)
         , session_dir_(session_dir)
         , device_id_(device_id)
         , session_num_(session_num)
-        , session_ts_(session_ts) {}
+        , session_ts_(session_ts)
+        , control_(control) {}
 
     ~VideoSensor() override = default;
 
@@ -169,13 +161,13 @@ protected:
         }
 
         // ★ 等六目 jhh02 先完成启流 (IMU 硬件依赖)
-        fprintf(stderr, "[%s] DBG setup: g_jhh02_init_done=%d, waiting...\n",
-                cfg_.name, (int)g_jhh02_init_done);
-        for (int wait_i = 0; wait_i < 500 && !g_jhh02_init_done; wait_i++) {
+        fprintf(stderr, "[%s] DBG setup: jhh02_init_done=%d, waiting...\n",
+                cfg_.name, (int)control_.jhh02_init_done);
+        for (int wait_i = 0; wait_i < 500 && !control_.jhh02_init_done; wait_i++) {
             usleep(20000);  // 20ms × 500 = 10s timeout
         }
-        fprintf(stderr, "[%s] DBG setup: wait done, g_jhh02_init_done=%d\n",
-                cfg_.name, (int)g_jhh02_init_done);
+        fprintf(stderr, "[%s] DBG setup: wait done, jhh02_init_done=%d\n",
+                cfg_.name, (int)control_.jhh02_init_done);
 
         // ── 5. 启动视频流 ──
         fprintf(stderr, "[%s] DBG setup: VideoStart id=%u...\n", cfg_.name, device_id_);
@@ -187,7 +179,7 @@ protected:
         fprintf(stderr, "[%s] DBG setup: VideoStart OK\n", cfg_.name);
 
         if (cfg_.vid == 0x1bcf && cfg_.pid == 0x2d50) {
-            int rem = --g_jhh2_remaining;
+            int rem = --control_.jhh2_remaining;
             fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", cfg_.name, rem);
         }
 
@@ -294,45 +286,42 @@ protected:
                 }
 
                 // Preview JPEG export (on-demand, in collect thread — no extra pthread)
-                if (g_preview_pending.load()) {
-                    std::lock_guard<std::mutex> lock(g_preview_mutex);
-                    if (g_preview_pending.load()) {
-                        // Downscale to 1/4 resolution for 5.5" screen preview
-                        int pw = w / 4, ph = h / 4;
-                        if (pw < 1) { pw = 1; } if (ph < 1) { ph = 1; }
-                        std::vector<uint8_t> scaled(pw * ph * 3);
-                        for (int y = 0; y < ph; y++) {
-                            for (int x = 0; x < pw; x++) {
-                                int sx = x * 4, sy = y * 4;
-                                int src_off = (sy * w + sx) * 3;
-                                int dst_off = (y * pw + x) * 3;
-                                scaled[dst_off]   = bgr[src_off];
-                                scaled[dst_off+1] = bgr[src_off+1];
-                                scaled[dst_off+2] = bgr[src_off+2];
-                            }
+                std::string preview_path;
+                if (control_.take_preview(preview_path)) {
+                    // Downscale to 1/4 resolution for 5.5" screen preview
+                    int pw = w / 4, ph = h / 4;
+                    if (pw < 1) { pw = 1; } if (ph < 1) { ph = 1; }
+                    std::vector<uint8_t> scaled(pw * ph * 3);
+                    for (int y = 0; y < ph; y++) {
+                        for (int x = 0; x < pw; x++) {
+                            int sx = x * 4, sy = y * 4;
+                            int src_off = (sy * w + sx) * 3;
+                            int dst_off = (y * pw + x) * 3;
+                            scaled[dst_off]   = bgr[src_off];
+                            scaled[dst_off+1] = bgr[src_off+1];
+                            scaled[dst_off+2] = bgr[src_off+2];
                         }
-                        // JPEG compress (libjpeg-turbo, already linked)
-                        unsigned long jpg_size = 0;
-                        uint8_t* jpg_buf = nullptr;
-                        tjhandle jpg_h = tjInitCompress();
-                        if (jpg_h) {
-                            int jr = tjCompress2(jpg_h, scaled.data(), pw, 0, ph,
-                                                 TJPF_BGR, &jpg_buf, &jpg_size,
-                                                 TJSAMP_420, 85, TJFLAG_FASTDCT);
-                            if (jr == 0 && jpg_buf && jpg_size > 0) {
-                                // Atomic write: temp file → rename
-                                std::string tmp = g_preview_path + ".tmp";
-                                FILE* fp = fopen(tmp.c_str(), "wb");
-                                if (fp) {
-                                    fwrite(jpg_buf, 1, jpg_size, fp);
-                                    fclose(fp);
-                                    rename(tmp.c_str(), g_preview_path.c_str());
-                                }
-                                tjFree(jpg_buf);
+                    }
+                    // JPEG compress (libjpeg-turbo, already linked)
+                    unsigned long jpg_size = 0;
+                    uint8_t* jpg_buf = nullptr;
+                    tjhandle jpg_h = tjInitCompress();
+                    if (jpg_h) {
+                        int jr = tjCompress2(jpg_h, scaled.data(), pw, 0, ph,
+                                             TJPF_BGR, &jpg_buf, &jpg_size,
+                                             TJSAMP_420, 85, TJFLAG_FASTDCT);
+                        if (jr == 0 && jpg_buf && jpg_size > 0) {
+                            // Atomic write: temp file → rename
+                            std::string tmp = preview_path + ".tmp";
+                            FILE* fp = fopen(tmp.c_str(), "wb");
+                            if (fp) {
+                                fwrite(jpg_buf, 1, jpg_size, fp);
+                                fclose(fp);
+                                rename(tmp.c_str(), preview_path.c_str());
                             }
-                            tjDestroy(jpg_h);
+                            tjFree(jpg_buf);
                         }
-                        g_preview_pending = false;
+                        tjDestroy(jpg_h);
                     }
                 }
             } else if (frame_idx == 0) {
@@ -427,6 +416,7 @@ private:
     uint32_t device_id_;
     int session_num_;
     std::string session_ts_;
+    VideoCaptureControl& control_;
 
     // MPP
     MppEncoder mpp_;

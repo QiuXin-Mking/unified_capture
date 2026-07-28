@@ -29,19 +29,11 @@
 #include "Nori_Xvision_API.h"
 
 #include "hardware/video/bgr2nv12.h"
+#include "hardware/video/capture_control.h"
 #include "hardware/video/mpp_encoder.h"
 #include "core/camera_config.h"
 #include "hardware/imu/imu_decode.h"
 #include "core/frame_queue.h"
-
-// 启流顺序协调
-extern std::atomic<int> g_jhh2_remaining;   // jhh04 等待此计数器归零
-extern std::atomic<bool> g_jhh02_init_done; // jhh02 优先启流完成标志
-
-// Preview JPEG export globals (defined in main.cpp)
-extern std::atomic<bool> g_preview_pending;
-extern std::string g_preview_path;
-extern std::mutex g_preview_mutex;
 
 // ============================================================
 // 单个通道的内部状态
@@ -89,11 +81,13 @@ public:
                  const std::string& session_dir,
                  int session_num,
                  const std::string& session_ts,
-                 std::atomic<bool>& running)
+                 std::atomic<bool>& running,
+                 VideoCaptureControl& control)
         : Sensor("sixcam", running)
         , session_dir_(session_dir)
         , session_num_(session_num)
         , session_ts_(session_ts)
+        , control_(control)
     {
         ch_[0].name        = jhh04_cfg.name;
         ch_[0].width       = jhh04_cfg.width;
@@ -227,8 +221,8 @@ protected:
                 return;
             }
             fprintf(stderr, "[%s] DBG: VideoStart OK\n", ch.name);
-            g_jhh02_init_done = true;  // ★ 通知独立JHH2可以继续
-            int rem = --g_jhh2_remaining;
+            control_.jhh02_init_done = true;  // ★ 通知独立JHH2可以继续
+            int rem = --control_.jhh2_remaining;
             fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", ch.name, rem);
             ch.initialized = true;
             printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
@@ -240,8 +234,8 @@ protected:
         {
             auto& ch = ch_[0];
             fprintf(stderr, "[%s] DBG: waiting for %d JHH2 devices...\n",
-                    ch.name, (int)g_jhh2_remaining);
-            while (g_jhh2_remaining > 0) {
+                    ch.name, (int)control_.jhh2_remaining);
+            while (control_.jhh2_remaining > 0) {
                 usleep(20000);
             }
             fprintf(stderr, "[%s] DBG: all JHH2 done, VideoStart...\n", ch.name);
@@ -299,6 +293,7 @@ private:
     std::string session_dir_;
     int session_num_;
     std::string session_ts_;
+    VideoCaptureControl& control_;
 
     // ============================================================
     // 单个通道的采集循环
@@ -395,42 +390,39 @@ private:
                 }
 
                 // Preview JPEG export (on-demand, only from color channel)
-                if (ch.output_h265 && g_preview_pending.load()) {
-                    std::lock_guard<std::mutex> lock(g_preview_mutex);
-                    if (g_preview_pending.load()) {
-                        int pw = w / 4, ph = h / 4;
-                        if (pw < 1) { pw = 1; } if (ph < 1) { ph = 1; }
-                        std::vector<uint8_t> scaled(pw * ph * 3);
-                        for (int y = 0; y < ph; y++) {
-                            for (int x = 0; x < pw; x++) {
-                                int sx = x * 4, sy = y * 4;
-                                int src_off = (sy * w + sx) * 3;
-                                int dst_off = (y * pw + x) * 3;
-                                scaled[dst_off]   = bgr[src_off];
-                                scaled[dst_off+1] = bgr[src_off+1];
-                                scaled[dst_off+2] = bgr[src_off+2];
-                            }
+                std::string preview_path;
+                if (ch.output_h265 && control_.take_preview(preview_path)) {
+                    int pw = w / 4, ph = h / 4;
+                    if (pw < 1) { pw = 1; } if (ph < 1) { ph = 1; }
+                    std::vector<uint8_t> scaled(pw * ph * 3);
+                    for (int y = 0; y < ph; y++) {
+                        for (int x = 0; x < pw; x++) {
+                            int sx = x * 4, sy = y * 4;
+                            int src_off = (sy * w + sx) * 3;
+                            int dst_off = (y * pw + x) * 3;
+                            scaled[dst_off]   = bgr[src_off];
+                            scaled[dst_off+1] = bgr[src_off+1];
+                            scaled[dst_off+2] = bgr[src_off+2];
                         }
-                        unsigned long jpg_size = 0;
-                        uint8_t* jpg_buf = nullptr;
-                        tjhandle jpg_h = tjInitCompress();
-                        if (jpg_h) {
-                            int jr = tjCompress2(jpg_h, scaled.data(), pw, 0, ph,
-                                                 TJPF_BGR, &jpg_buf, &jpg_size,
-                                                 TJSAMP_420, 85, TJFLAG_FASTDCT);
-                            if (jr == 0 && jpg_buf && jpg_size > 0) {
-                                std::string tmp = g_preview_path + ".tmp";
-                                FILE* fp = fopen(tmp.c_str(), "wb");
-                                if (fp) {
-                                    fwrite(jpg_buf, 1, jpg_size, fp);
-                                    fclose(fp);
-                                    rename(tmp.c_str(), g_preview_path.c_str());
-                                }
-                                tjFree(jpg_buf);
+                    }
+                    unsigned long jpg_size = 0;
+                    uint8_t* jpg_buf = nullptr;
+                    tjhandle jpg_h = tjInitCompress();
+                    if (jpg_h) {
+                        int jr = tjCompress2(jpg_h, scaled.data(), pw, 0, ph,
+                                             TJPF_BGR, &jpg_buf, &jpg_size,
+                                             TJSAMP_420, 85, TJFLAG_FASTDCT);
+                        if (jr == 0 && jpg_buf && jpg_size > 0) {
+                            std::string tmp = preview_path + ".tmp";
+                            FILE* fp = fopen(tmp.c_str(), "wb");
+                            if (fp) {
+                                fwrite(jpg_buf, 1, jpg_size, fp);
+                                fclose(fp);
+                                rename(tmp.c_str(), preview_path.c_str());
                             }
-                            tjDestroy(jpg_h);
+                            tjFree(jpg_buf);
                         }
-                        g_preview_pending = false;
+                        tjDestroy(jpg_h);
                     }
                 }
             }
