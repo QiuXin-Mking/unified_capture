@@ -107,6 +107,7 @@ int Runtime::run() {
     CameraDiscoveryResult cameras = discover_cameras(configuration);
     if (!is_banana && cameras.active_count <= 0) {
         fprintf(stderr, "ERROR: No cameras\n");
+        Nori_Xvision_UnInit();
         return 1;
     }
     if (is_banana && !configuration.wrist.allow_missing_devices &&
