@@ -6,18 +6,14 @@ CXX      ?= g++
 CC       ?= gcc
 CXXFLAGS := -std=c++20 -Wall -g -O2 -pthread
 CFLAGS   := -std=gnu11 -Wall -g -O2
-LDFLAGS  := -lNori_Xvision_Std -lrockchip_mpp -lturbojpeg -lgpiod -lsurvive -lpthread -lrt -ludev -lm
+LDFLAGS  := -lrockchip_mpp -lturbojpeg -lgpiod -lsurvive -lpthread -lrt -ludev -lm
 
-# Nori Xvision SDK paths (override as needed).
-NORI_INC ?= /usr/local/Nori_Xvision/include
-NORI_LIB ?= /usr/local/Nori_Xvision/lib
 MPP_INC  ?= /usr/include/rockchip
 
 # libsurvive path (override as needed).
 SURVIVE_DIR ?= /root/projects/libsurvive
 
 INCLUDES := -I. \
-	-I$(NORI_INC)/Nori_Xvision_API \
 	-I$(MPP_INC) \
 	-I$(SURVIVE_DIR)/include/libsurvive \
 	-I$(SURVIVE_DIR)/include \
@@ -25,8 +21,7 @@ INCLUDES := -I. \
 	-I$(SURVIVE_DIR)/libs/cnmatrix/include \
 	-I$(SURVIVE_DIR)/libs/cnkalman/src
 
-LIBS     := -L$(NORI_LIB) -L$(SURVIVE_DIR)/bin \
-	-Wl,-rpath,$(NORI_LIB) \
+LIBS     := -L$(SURVIVE_DIR)/bin \
 	-Wl,-rpath,$(SURVIVE_DIR)/bin \
 	$(LDFLAGS)
 
@@ -133,13 +128,11 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  make                     Build $(TARGET)"
-	@echo "  make scan                Build and scan Nori devices"
+	@echo "  make scan                Build and scan V4L2 devices"
 	@echo "  make test                Run host-only tests"
 	@echo "  make clean               Remove build artifacts"
 	@echo ""
 	@echo "Variables:"
-	@echo "  NORI_INC   Nori SDK include path (default: /usr/local/Nori_Xvision/include)"
-	@echo "  NORI_LIB   Nori SDK library path (default: /usr/local/Nori_Xvision/lib)"
 	@echo "  MPP_INC    Rockchip MPP include path (default: /usr/include/rockchip)"
 	@echo ""
 	@echo "Cross-compile:"

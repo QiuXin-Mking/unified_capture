@@ -12,7 +12,5 @@ struct WristVideoFormat {
 };
 
 const WristVideoFormat& wrist_target_format();
-CameraConfig make_wrist_left_config(uint16_t vid, uint16_t pid,
-                                    uint32_t device_id);
-CameraConfig make_wrist_right_config(uint16_t vid, uint16_t pid,
-                                     uint32_t device_id);
+CameraConfig make_wrist_left_config(uint16_t vid, uint16_t pid);
+CameraConfig make_wrist_right_config(uint16_t vid, uint16_t pid);

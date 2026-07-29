@@ -9,7 +9,7 @@
 #include <vector>
 
 struct WristDeviceInfo {
-    uint32_t device_id = 0;
+    std::string device_path;
     uint16_t vid = 0;
     uint16_t pid = 0;
     std::string product;
@@ -19,6 +19,7 @@ struct WristDeviceInfo {
 struct WristCameraSlot {
     CameraConfig config{};
     bool available = false;
+    std::string device_path;
     std::string error;
 };
 

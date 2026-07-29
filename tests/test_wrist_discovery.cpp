@@ -7,9 +7,9 @@
 
 namespace {
 
-WristDeviceInfo device(uint32_t device_id, const std::string& product,
+WristDeviceInfo device(const std::string& path, const std::string& product,
                        std::vector<WristVideoFormat> formats) {
-    return WristDeviceInfo{device_id, 0x1bcf, 0x2d50, product, std::move(formats)};
+    return WristDeviceInfo{path, 0x1bcf, 0x2d50, product, std::move(formats)};
 }
 
 void assert_wrist_encoding(const WristDiscoveryResult& result) {
@@ -27,8 +27,8 @@ int main() {
     const WristVideoFormat target{true, 1440, 960, 30};
 
     const std::vector<WristDeviceInfo> complete_inventory{
-        device(4, "SL", {target}),
-        device(9, "JHHSW", {target}),
+        device("/dev/video4", "SL", {target}),
+        device("/dev/video9", "JHHSW", {target}),
     };
     const WristDiscoveryResult complete =
         match_wrist_cameras(map, complete_inventory);
@@ -41,7 +41,7 @@ int main() {
     assert_wrist_encoding(complete);
 
     const WristDiscoveryResult missing_right = match_wrist_cameras(
-        map, {device(4, "SL", {target})});
+        map, {device("/dev/video4", "SL", {target})});
     assert(missing_right.active_count == 1);
     assert(missing_right.degraded);
     assert(!missing_right.cameras[1].available);
@@ -49,14 +49,14 @@ int main() {
     assert(missing_right.errors.size() == 1);
 
     const WristDiscoveryResult wrong_product = match_wrist_cameras(
-        map, {device(4, "SL-extra", {target}), device(9, "JHHSW", {target})});
+        map, {device("/dev/video4", "SL-extra", {target}), device("/dev/video9", "JHHSW", {target})});
     assert(!wrong_product.cameras[0].available);
-    assert(wrong_product.cameras[0].config.device_id == -1);
+    assert(wrong_product.cameras[0].device_path.empty());
     assert(wrong_product.active_count == 1);
 
     const WristDeviceMap duplicate_mapping{true, "SL", "SL"};
     const WristDiscoveryResult reused_device = match_wrist_cameras(
-        duplicate_mapping, {device(4, "SL", {target})});
+        duplicate_mapping, {device("/dev/video4", "SL", {target})});
     assert(!reused_device.cameras[0].available);
     assert(!reused_device.cameras[1].available);
     assert(reused_device.active_count == 0);
@@ -66,17 +66,17 @@ int main() {
            std::string::npos);
 
     const WristDiscoveryResult duplicate_left = match_wrist_cameras(
-        map, {device(4, "SL", {target}), device(5, "SL", {target}),
-              device(9, "JHHSW", {target})});
+        map, {device("/dev/video4", "SL", {target}), device("/dev/video5", "SL", {target}),
+              device("/dev/video9", "JHHSW", {target})});
     assert(!duplicate_left.cameras[0].available);
-    assert(duplicate_left.cameras[0].config.device_id == -1);
+    assert(duplicate_left.cameras[0].device_path.empty());
     assert(duplicate_left.cameras[0].error.find("duplicate") != std::string::npos);
 
     const WristDiscoveryResult wrong_format = match_wrist_cameras(
-        map, {device(4, "SL", {{true, 1280, 720, 30}}),
-              device(9, "JHHSW", {target})});
+        map, {device("/dev/video4", "SL", {{true, 1280, 720, 30}}),
+              device("/dev/video9", "JHHSW", {target})});
     assert(!wrong_format.cameras[0].available);
-    assert(wrong_format.cameras[0].config.device_id == -1);
+    assert(wrong_format.cameras[0].device_path.empty());
     assert(wrong_format.cameras[0].error.find("1440x960@30") !=
            std::string::npos);
     return 0;

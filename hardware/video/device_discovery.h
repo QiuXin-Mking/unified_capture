@@ -11,12 +11,13 @@
 struct CameraSlot {
     CameraConfig config;
     bool enabled = false;
+    std::string device_path;
 };
 
 struct SixCamDevices {
     bool enabled = false;
-    uint32_t jhh04_id = 0;
-    uint32_t jhh02_id = 0;
+    std::string jhh04_path;
+    std::string jhh02_path;
 };
 
 struct CameraDiscoveryResult {

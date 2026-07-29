@@ -17,8 +17,6 @@
 #include <utility>
 #include <vector>
 
-#include "Nori_Xvision_API.h"
-
 namespace {
 
 std::vector<std::pair<std::string, bool>> status_cameras(
@@ -28,8 +26,8 @@ std::vector<std::pair<std::string, bool>> status_cameras(
         result.emplace_back("wrist_left", cameras.wrist[0].enabled);
         result.emplace_back("wrist_right", cameras.wrist[1].enabled);
         if (cameras.sixcam.enabled) {
-            result.emplace_back("jhh04", cameras.sixcam.jhh04_id > 0);
-            result.emplace_back("jhh02", cameras.sixcam.jhh02_id > 0);
+            result.emplace_back("jhh04", cameras.sixcam.!jhh04_path.empty());
+            result.emplace_back("jhh02", cameras.sixcam.!jhh02_path.empty());
         }
         return result;
     }
@@ -38,8 +36,8 @@ std::vector<std::pair<std::string, bool>> status_cameras(
         result.emplace_back(camera.config.name, camera.enabled);
     }
     if (cameras.sixcam.enabled) {
-        result.emplace_back("jhh04", cameras.sixcam.jhh04_id > 0);
-        result.emplace_back("jhh02", cameras.sixcam.jhh02_id > 0);
+        result.emplace_back("jhh04", cameras.sixcam.!jhh04_path.empty());
+        result.emplace_back("jhh02", cameras.sixcam.!jhh02_path.empty());
     }
     return result;
 }
@@ -118,8 +116,7 @@ int Runtime::run() {
     CameraDiscoveryResult cameras = discover_cameras(configuration);
     if (!is_banana && cameras.active_count <= 0) {
         fprintf(stderr, "ERROR: No cameras\n");
-        Nori_Xvision_UnInit();
-        return 1;
+                return 1;
     }
     if (is_banana && !configuration.wrist.allow_missing_devices) {
         int expected = static_cast<int>(cameras.wrist.size());
@@ -129,8 +126,7 @@ int Runtime::run() {
             for (const std::string& error : cameras.camera_errors) {
                 fprintf(stderr, "  %s\n", error.c_str());
             }
-            Nori_Xvision_UnInit();
-            return 1;
+                        return 1;
         }
     }
 
@@ -382,8 +378,7 @@ int Runtime::run() {
 
     gpio.close();
     socket.close();
-    Nori_Xvision_UnInit();
-    if (options_.use_gpio) {
+        if (options_.use_gpio) {
         printf("\n=== Exit ===\n");
     }
     return 0;

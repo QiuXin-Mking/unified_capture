@@ -1,9 +1,9 @@
 #pragma once
 /*
- * video_sensor.h — VideoSensor: Nori Xvision SDK 采集 + MPP H.265 编码 + FFmpeg MKV 封装
+ * video_sensor.h — VideoSensor: V4L2 采集 + MPP H.265 编码 + FFmpeg MKV 封装
  *
  * 每个 VideoSensor 对应一个摄像头, 内部包含:
- *   - Nori Xvision SDK 帧轮询
+ *   - V4L2 帧轮询 (非阻塞 DQBUF)
  *   - turbojpeg MJPEG → BGR 解码
  *   - MPP H.265 硬件编码
  *   - FFmpeg 子进程 (FIFO → MKV)
@@ -27,8 +27,8 @@
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/mpp_err.h>
 
-// Nori Xvision SDK
-#include "Nori_Xvision_API.h"
+// V4L2 device
+#include "hardware/video/v4l2_device.h"
 
 // elapsed_us() / g_t0 定义在 sensor.h
 
@@ -43,7 +43,7 @@ class VideoSensor : public Sensor {
 public:
     VideoSensor(const CameraConfig& cfg,
                 const std::string& session_dir,
-                uint32_t device_id,
+                const std::string& device_path,
                 int session_num,
                 const std::string& session_ts,
                 std::atomic<bool>& running,
@@ -51,7 +51,7 @@ public:
         : Sensor(cfg.name, running)
         , cfg_(cfg)
         , session_dir_(session_dir)
-        , device_id_(device_id)
+        , device_path_(device_path)
         , session_num_(session_num)
         , session_ts_(session_ts)
         , control_(control) {}
@@ -63,36 +63,21 @@ public:
 protected:
     void setup() override {
         char path[256];
-        fprintf(stderr, "[%s] DBG setup: ENTER (device_id=%u)\n", cfg_.name, device_id_);
+        fprintf(stderr, "[%s] DBG setup: ENTER (device=%s)\n", cfg_.name, device_path_.c_str());
 
         // ── 创建输出目录 ──
         snprintf(path, sizeof(path), "%s/%s", session_dir_.c_str(), cfg_.name);
         out_dir_ = path;
         mkdir_p(out_dir_.c_str(), 0755);
 
-        // ── 1. Nori Xvision 初始化采集 ──
-        VIDEO_INFO vinfo;
-        // 获取设备默认格式（MJPEG），然后覆盖分辨率/帧率
-        Nori_Xvision_GetDeviceVideoInfo(device_id_, 0, &vinfo);
-        vinfo.u_Width  = (uint32_t)cfg_.width;
-        vinfo.u_Height = (uint32_t)cfg_.height;
-        vinfo.f_Fps    = (float)cfg_.fps;
-
-        fprintf(stderr, "[%s] DBG setup: DeviceVideoInit id=%u %dx%d@%.1f...\n",
-                cfg_.name, device_id_, vinfo.u_Width, vinfo.u_Height, vinfo.f_Fps);
-        uint32_t ret = Nori_Xvision_DeviceVideoInit(device_id_, vinfo);
-        if (ret != NORI_OK) {
-            fprintf(stderr, "[%s] DeviceVideoInit failed: 0x%x\n", cfg_.name, ret);
+        // ── 1. V4L2 初始化采集 ──
+        fprintf(stderr, "[%s] DBG setup: V4L2 open %s %dx%d@%d...\n",
+                cfg_.name, device_path_.c_str(), cfg_.width, cfg_.height, cfg_.fps);
+        if (!device_.open(device_path_, cfg_.width, cfg_.height, cfg_.fps)) {
+            fprintf(stderr, "[%s] V4L2 open failed\n", cfg_.name);
             return;
         }
-        fprintf(stderr, "[%s] DBG setup: DeviceVideoInit OK\n", cfg_.name);
-
-        // 设置触发模式为非触发 (连续采集)
-        E_TRIGGER_MODE mode;
-        Nori_Xvision_GetTriggerMode(device_id_, &mode);
-        if (mode != NON_TRIIGER_MODE) {
-            Nori_Xvision_SetTriggerMode(device_id_, NON_TRIIGER_MODE);
-        }
+        fprintf(stderr, "[%s] DBG setup: V4L2 open OK\n", cfg_.name);
 
         // ── 2. MPP 编码器 ──
         if (cfg_.output_h265) {
@@ -170,21 +155,20 @@ protected:
                 cfg_.name, (int)control_.jhh02_init_done);
 
         // ── 5. 启动视频流 ──
-        fprintf(stderr, "[%s] DBG setup: VideoStart id=%u...\n", cfg_.name, device_id_);
-        ret = Nori_Xvision_VideoStart(device_id_);
-        if (ret != NORI_OK) {
-            fprintf(stderr, "[%s] VideoStart failed: 0x%x\n", cfg_.name, ret);
+        fprintf(stderr, "[%s] DBG setup: start_stream...\n", cfg_.name);
+        if (!device_.start_stream()) {
+            fprintf(stderr, "[%s] start_stream failed\n", cfg_.name);
             return;
         }
-        fprintf(stderr, "[%s] DBG setup: VideoStart OK\n", cfg_.name);
+        fprintf(stderr, "[%s] DBG setup: start_stream OK\n", cfg_.name);
 
         if (cfg_.vid == 0x1bcf && cfg_.pid == 0x2d50) {
             int rem = --control_.jhh2_remaining;
             fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", cfg_.name, rem);
         }
 
-        printf("[%s] setup OK  (dev_id=%u, %dx%d@%dfps, H265=%c, Y8=%c)\n",
-               cfg_.name, device_id_, cfg_.width, cfg_.height, cfg_.fps,
+        printf("[%s] setup OK  (device=%s, %dx%d@%dfps, H265=%c, Y8=%c)\n",
+               cfg_.name, device_path_.c_str(), cfg_.width, cfg_.height, cfg_.fps,
                cfg_.output_h265 ? 'Y' : 'N', cfg_.output_y8 ? 'Y' : 'N');
         fprintf(stderr, "[%s] DBG setup: EXIT (initialized=true)\n", cfg_.name);
         initialized_ = true;
@@ -212,11 +196,12 @@ protected:
                 cfg_.name, (int)running_);
 
         while (running_) {
-            FRAME_BUFFER_DATA* fb = Nori_Xvision_GetFrameBuff(device_id_, false, 0);
-            if (!fb) {
+            size_t mjpg_len = 0;
+            const uint8_t* mjpg = device_.dequeue_frame(mjpg_len);
+            if (!mjpg) {
                 empty_polls++;
                 if (empty_polls == 1) {
-                    fprintf(stderr, "[%s] DBG collect: GetFrameBuff NULL (first)\n", cfg_.name);
+                    fprintf(stderr, "[%s] DBG collect: dequeue NULL (first)\n", cfg_.name);
                 }
                 usleep(1000);
                 continue;
@@ -229,8 +214,6 @@ protected:
             }
 
             uint64_t ts_us = elapsed_us();
-            uint8_t* mjpg = (uint8_t*)fb->pBufAddr;
-            size_t mjpg_len = fb->buff_Length;
 
             // --- MJPEG → BGR (turbojpeg) ---
             int w = 0, h = 0, subsamp = 0;
@@ -240,7 +223,7 @@ protected:
                     fprintf(stderr, "[%s] DBG collect: tjDecompressHeader2 failed, len=%zu\n",
                             cfg_.name, mjpg_len);
                 }
-                Nori_Xvision_FreeFrameBuff(device_id_, fb);
+                device_.requeue_frame();
                 continue;
             }
 
@@ -253,7 +236,7 @@ protected:
                 if (!nv12) {
                     fprintf(stderr, "[%s] FATAL: nv12 alloc failed (w=%d h=%d size=%u)\n",
                             cfg_.name, w, h, nv12_size);
-                    Nori_Xvision_FreeFrameBuff(device_id_, fb);
+                    device_.requeue_frame();
                     break;
                 }
                 fprintf(stderr, "[%s] actual resolution %dx%d (cfg=%dx%d)\n",
@@ -330,7 +313,7 @@ protected:
             }
 
             delete[] bgr;
-            Nori_Xvision_FreeFrameBuff(device_id_, fb);
+            device_.requeue_frame();
             frame_idx++;
 
             if (frame_idx % 30 == 0) {
@@ -343,8 +326,8 @@ protected:
                 cfg_.name, (unsigned long long)frame_idx, empty_polls);
 
         // 停止流
-        fprintf(stderr, "[%s] DBG collect: VideoStop...\n", cfg_.name);
-        Nori_Xvision_VideoStop(device_id_);
+        fprintf(stderr, "[%s] DBG collect: stop_stream...\n", cfg_.name);
+        device_.stop_stream();
 
         // Flush MPP
         if (cfg_.output_h265) {
@@ -383,9 +366,9 @@ protected:
             }
         }
 
-        // 反初始化 Nori Xvision 设备
-        fprintf(stderr, "[%s] DBG teardown: DeviceVideoUnInit...\n", cfg_.name);
-        Nori_Xvision_DeviceVideoUnInit(device_id_);
+        // 关闭 V4L2 设备
+        fprintf(stderr, "[%s] DBG teardown: V4L2 close...\n", cfg_.name);
+        device_.close();
 
         // 清理 MPP
         if (cfg_.output_h265) {
@@ -413,7 +396,8 @@ private:
     CameraConfig cfg_;
     std::string session_dir_;
     std::string out_dir_;
-    uint32_t device_id_;
+    std::string device_path_;
+    V4l2Device device_;
     int session_num_;
     std::string session_ts_;
     VideoCaptureControl& control_;

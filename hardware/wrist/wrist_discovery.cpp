@@ -62,7 +62,8 @@ void match_slot(WristDiscoveryResult* result, std::size_t index,
     }
 
     WristCameraSlot& slot = result->cameras[index];
-    slot.config = make_config(device.vid, device.pid, device.device_id);
+    slot.config = make_config(device.vid, device.pid);
+    slot.device_path = device.device_path;
     slot.available = true;
     ++result->active_count;
 }

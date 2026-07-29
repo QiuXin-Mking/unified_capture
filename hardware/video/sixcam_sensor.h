@@ -26,7 +26,7 @@
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/mpp_err.h>
 
-#include "Nori_Xvision_API.h"
+#include "hardware/video/v4l2_device.h"
 
 #include "hardware/video/bgr2nv12.h"
 #include "hardware/video/capture_control.h"
@@ -46,8 +46,9 @@ struct SixCamChannel {
     bool has_imu;
     ImuOrientation imu_orientation;
 
-    // Nori Xvision
-    uint32_t device_id = 0;
+    // V4L2
+    std::string device_path;
+    V4l2Device device;
 
     // MPP
     MppEncoder mpp;
@@ -76,8 +77,8 @@ class SixCamSensor : public Sensor {
 public:
     SixCamSensor(const CameraConfig& jhh04_cfg,
                  const CameraConfig& jhh02_cfg,
-                 uint32_t jhh04_id,
-                 uint32_t jhh02_id,
+                 const std::string& jhh04_path,
+                 const std::string& jhh02_path,
                  const std::string& session_dir,
                  int session_num,
                  const std::string& session_ts,
@@ -99,7 +100,7 @@ public:
         ch_[0].output_y8   = jhh04_cfg.output_y8;
         ch_[0].has_imu     = jhh04_cfg.has_imu;
         ch_[0].imu_orientation = jhh04_cfg.imu_orientation;
-        ch_[0].device_id   = jhh04_id;
+        ch_[0].device_path = jhh04_path;
 
         ch_[1].name        = jhh02_cfg.name;
         ch_[1].width       = jhh02_cfg.width;
@@ -111,7 +112,7 @@ public:
         ch_[1].output_y8   = jhh02_cfg.output_y8;
         ch_[1].has_imu     = jhh02_cfg.has_imu;
         ch_[1].imu_orientation = jhh02_cfg.imu_orientation;
-        ch_[1].device_id   = jhh02_id;
+        ch_[1].device_path = jhh02_path;
     }
 
     // 对外暴露两个 IMU 队列 (供 ImuSensor 消费)
@@ -130,29 +131,16 @@ protected:
             mkdir_p(path, 0755);
         }
 
-        // ── 2. DeviceVideoInit 两个通道 ──
+        // ── 2. V4L2 open 两个通道 ──
         for (int i = 0; i < 2; i++) {
             auto& ch = ch_[i];
-            VIDEO_INFO vinfo;
-            Nori_Xvision_GetDeviceVideoInfo(ch.device_id, 0, &vinfo);
-            vinfo.u_Width  = (uint32_t)ch.width;
-            vinfo.u_Height = (uint32_t)ch.height;
-            vinfo.f_Fps    = (float)ch.fps;
-
-            fprintf(stderr, "[%s] DBG: DeviceVideoInit id=%u %dx%d@%.1f...\n",
-                    ch.name, ch.device_id, vinfo.u_Width, vinfo.u_Height, vinfo.f_Fps);
-            uint32_t ret = Nori_Xvision_DeviceVideoInit(ch.device_id, vinfo);
-            if (ret != NORI_OK) {
-                fprintf(stderr, "[%s] DeviceVideoInit failed: 0x%x\n", ch.name, ret);
+            fprintf(stderr, "[%s] DBG: V4L2 open %s %dx%d@%d...\n",
+                    ch.name, ch.device_path.c_str(), ch.width, ch.height, ch.fps);
+            if (!ch.device.open(ch.device_path, ch.width, ch.height, ch.fps)) {
+                fprintf(stderr, "[%s] V4L2 open failed\n", ch.name);
                 return;
             }
-            fprintf(stderr, "[%s] DBG: DeviceVideoInit OK\n", ch.name);
-
-            E_TRIGGER_MODE mode;
-            Nori_Xvision_GetTriggerMode(ch.device_id, &mode);
-            if (mode != NON_TRIIGER_MODE) {
-                Nori_Xvision_SetTriggerMode(ch.device_id, NON_TRIIGER_MODE);
-            }
+            fprintf(stderr, "[%s] DBG: V4L2 open OK\n", ch.name);
         }
 
         // ── 3. MPP 编码器 (仅 jhh02 需要) ──
@@ -214,13 +202,12 @@ protected:
         // ── 6. JHH02 先启流 (VID/PID=1bcf:2d50, IMU 主通道) ──
         {
             auto& ch = ch_[1];
-            fprintf(stderr, "[%s] DBG: VideoStart (IMU master)...\n", ch.name);
-            uint32_t ret = Nori_Xvision_VideoStart(ch.device_id);
-            if (ret != NORI_OK) {
-                fprintf(stderr, "[%s] VideoStart failed: 0x%x\n", ch.name, ret);
+            fprintf(stderr, "[%s] DBG: start_stream (IMU master)...\n", ch.name);
+            if (!ch.device.start_stream()) {
+                fprintf(stderr, "[%s] start_stream failed\n", ch.name);
                 return;
             }
-            fprintf(stderr, "[%s] DBG: VideoStart OK\n", ch.name);
+            fprintf(stderr, "[%s] DBG: start_stream OK\n", ch.name);
             control_.jhh02_init_done = true;  // ★ 通知独立JHH2可以继续
             int rem = --control_.jhh2_remaining;
             fprintf(stderr, "[%s] DBG: JHH2 done, remaining=%d\n", ch.name, rem);
@@ -238,13 +225,12 @@ protected:
             while (control_.jhh2_remaining > 0) {
                 usleep(20000);
             }
-            fprintf(stderr, "[%s] DBG: all JHH2 done, VideoStart...\n", ch.name);
-            uint32_t ret = Nori_Xvision_VideoStart(ch.device_id);
-            if (ret != NORI_OK) {
-                fprintf(stderr, "[%s] VideoStart failed: 0x%x\n", ch.name, ret);
+            fprintf(stderr, "[%s] DBG: all JHH2 done, start_stream...\n", ch.name);
+            if (!ch.device.start_stream()) {
+                fprintf(stderr, "[%s] start_stream failed\n", ch.name);
                 return;
             }
-            fprintf(stderr, "[%s] DBG: VideoStart OK\n", ch.name);
+            fprintf(stderr, "[%s] DBG: start_stream OK\n", ch.name);
             ch.initialized = true;
             printf("[%s] setup OK  (%dx%d@%dfps, H265=%c, Y8=%c)\n",
                    ch.name, ch.width, ch.height, ch.fps,
@@ -265,8 +251,8 @@ protected:
             auto& ch = ch_[i];
             if (!ch.initialized) continue;
 
-            fprintf(stderr, "[%s] DBG teardown: VideoStop...\n", ch.name);
-            Nori_Xvision_VideoStop(ch.device_id);
+            fprintf(stderr, "[%s] DBG teardown: stop_stream...\n", ch.name);
+            ch.device.stop_stream();
 
             if (ch.output_h265) {
                 if (ch.fifo_fp) { fclose(ch.fifo_fp); ch.fifo_fp = nullptr; }
@@ -281,8 +267,8 @@ protected:
             if (ch.output_h265) { unlink(ch.fifo_path.c_str()); }
             if (ch.y8_fp) { fclose(ch.y8_fp); ch.y8_fp = nullptr; }
 
-            fprintf(stderr, "[%s] DBG teardown: DeviceVideoUnInit...\n", ch.name);
-            Nori_Xvision_DeviceVideoUnInit(ch.device_id);
+            fprintf(stderr, "[%s] DBG teardown: V4L2 close...\n", ch.name);
+            ch.device.close();
 
             printf("[%s] teardown OK\n", ch.name);
         }
@@ -321,11 +307,12 @@ private:
                 ch.name, (int)running_);
 
         while (running_) {
-            FRAME_BUFFER_DATA* fb = Nori_Xvision_GetFrameBuff(ch.device_id, false, 0);
-            if (!fb) {
+            size_t mjpg_len = 0;
+            const uint8_t* mjpg = ch.device.dequeue_frame(mjpg_len);
+            if (!mjpg) {
                 empty_polls++;
                 if (empty_polls == 1) {
-                    fprintf(stderr, "[%s] DBG collect: GetFrameBuff NULL (first)\n", ch.name);
+                    fprintf(stderr, "[%s] DBG collect: dequeue NULL (first)\n", ch.name);
                 }
                 usleep(1000);
                 continue;
@@ -338,14 +325,12 @@ private:
             }
 
             uint64_t ts_us = elapsed_us();
-            uint8_t* mjpg = (uint8_t*)fb->pBufAddr;
-            size_t mjpg_len = fb->buff_Length;
 
             // MJPEG → BGR
             int w = 0, h = 0, subsamp = 0;
             if (tjDecompressHeader2(tj, mjpg, mjpg_len, &w, &h, &subsamp) != 0 ||
                 w <= 0 || w > 8000 || h <= 0 || h > 8000) {
-                Nori_Xvision_FreeFrameBuff(ch.device_id, fb);
+                ch.device.requeue_frame();
                 continue;
             }
 
@@ -358,7 +343,7 @@ private:
                 if (!nv12) {
                     fprintf(stderr, "[%s] FATAL: nv12 alloc failed (w=%d h=%d size=%u)\n",
                             ch.name, w, h, nv12_size);
-                    Nori_Xvision_FreeFrameBuff(ch.device_id, fb);
+                    ch.device.requeue_frame();
                     break;
                 }
                 fprintf(stderr, "[%s] actual resolution %dx%d (cfg=%dx%d)\n",
@@ -428,7 +413,7 @@ private:
             }
 
             delete[] bgr;
-            Nori_Xvision_FreeFrameBuff(ch.device_id, fb);
+            ch.device.requeue_frame();
             frame_idx++;
 
             if (frame_idx % 30 == 0) {

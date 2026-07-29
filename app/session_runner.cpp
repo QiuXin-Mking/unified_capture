@@ -80,16 +80,16 @@ void SessionRunner::run(const std::string& session_dir,
         capture_control_.reset_stream_start(0, false);
 
         // ── 1. 六目模块 (先四目→后双目, 硬件内部已同步) ──
-        if (cameras_.sixcam.enabled && cameras_.sixcam.jhh04_id > 0 &&
-            cameras_.sixcam.jhh02_id > 0) {
+        if (cameras_.sixcam.enabled && !cameras_.sixcam.jhh04_path.empty() &&
+            !cameras_.sixcam.jhh02_path.empty()) {
             CameraConfig jhh04{
                 "jhh04", kSixVid, kSixPid, 0, 3104, 480, 30, 4000000, 30, true,
-                ImuOrientation::HORIZONTAL_TOP, false, true, -1};
+                ImuOrientation::HORIZONTAL_TOP, false, true};
             CameraConfig jhh02{
                 "jhh02", kJhh2Vid, kJhh2Pid, 2, 4000, 1200, 30, 16000000, 30, true,
-                ImuOrientation::HORIZONTAL_TOP, options_.use_h265, true, -1};
+                ImuOrientation::HORIZONTAL_TOP, options_.use_h265, true};
             auto sixcam = std::make_unique<SixCamSensor>(
-                jhh04, jhh02, cameras_.sixcam.jhh04_id, cameras_.sixcam.jhh02_id,
+                jhh04, jhh02, cameras_.sixcam.jhh04_path, cameras_.sixcam.jhh02_path,
                 session_dir, session_number, session_timestamp, session_running_,
                 capture_control_);
             SixCamSensor* sixcam_ptr = sixcam.get();
@@ -112,7 +112,7 @@ void SessionRunner::run(const std::string& session_dir,
             config.output_h265 = true;
             config.output_y8 = false;
             auto video = std::make_unique<VideoSensor>(
-                config, session_dir, static_cast<uint32_t>(config.device_id),
+                config, session_dir, camera.device_path,
                 session_number, session_timestamp, session_running_, capture_control_);
             VideoSensor* video_ptr = video.get();
             sensors_.push_back(std::move(video));
@@ -131,7 +131,7 @@ void SessionRunner::run(const std::string& session_dir,
             }
         }
         const bool sixcam_jhh02_available =
-            cameras_.sixcam.enabled && cameras_.sixcam.jhh02_id;
+            cameras_.sixcam.enabled && !cameras_.sixcam.jhh02_path.empty();
         capture_control_.reset_stream_start(independent_jhh2_count,
                                             sixcam_jhh02_available);
 
@@ -144,7 +144,7 @@ void SessionRunner::run(const std::string& session_dir,
                 config.output_h265 = false;
             }
             auto video = std::make_unique<VideoSensor>(
-                config, session_dir, static_cast<uint32_t>(config.device_id),
+                config, session_dir, camera.device_path,
                 session_number, session_timestamp, session_running_, capture_control_);
             VideoSensor* video_ptr = video.get();
             sensors_.push_back(std::move(video));
@@ -155,16 +155,16 @@ void SessionRunner::run(const std::string& session_dir,
             }
         }
 
-        if (cameras_.sixcam.enabled && cameras_.sixcam.jhh04_id > 0 &&
-            cameras_.sixcam.jhh02_id > 0) {
+        if (cameras_.sixcam.enabled && !cameras_.sixcam.jhh04_path.empty() &&
+            !cameras_.sixcam.jhh02_path.empty()) {
             CameraConfig jhh04{
                 "jhh04", kSixVid, kSixPid, 0, 3104, 480, 30, 4000000, 30, true,
-                ImuOrientation::HORIZONTAL_TOP, false, true, -1};
+                ImuOrientation::HORIZONTAL_TOP, false, true};
             CameraConfig jhh02{
                 "jhh02", kJhh2Vid, kJhh2Pid, 2, 4000, 1200, 30, 16000000, 30, true,
-                ImuOrientation::HORIZONTAL_TOP, options_.use_h265, true, -1};
+                ImuOrientation::HORIZONTAL_TOP, options_.use_h265, true};
             auto sixcam = std::make_unique<SixCamSensor>(
-                jhh04, jhh02, cameras_.sixcam.jhh04_id, cameras_.sixcam.jhh02_id,
+                jhh04, jhh02, cameras_.sixcam.jhh04_path, cameras_.sixcam.jhh02_path,
                 session_dir, session_number, session_timestamp, session_running_,
                 capture_control_);
             SixCamSensor* sixcam_ptr = sixcam.get();
