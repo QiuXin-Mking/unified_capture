@@ -95,6 +95,11 @@ struct MppEncoder {
         MppBuffer buf = nullptr;
         MPP_RET ret = mpp_buffer_get(buf_group, &buf, frame_size);
         if (ret != MPP_OK || !buf) {
+            // Buffer temporarily exhausted; wait a bit and retry once.
+            usleep(5000);
+            ret = mpp_buffer_get(buf_group, &buf, frame_size);
+        }
+        if (ret != MPP_OK || !buf) {
             fprintf(stderr, "[MPP] mpp_buffer_get failed ret=%d buf=%p\n", ret, (void*)buf);
             mpp_frame_deinit(&frame);
             return 0;
