@@ -66,10 +66,13 @@ struct MppEncoder {
         ret = mpi->control(ctx, MPP_ENC_SET_CODEC_CFG, &codec);
         if (ret != MPP_OK) { fprintf(stderr, "MPP_ENC_SET_CODEC_CFG failed\n"); return false; }
 
-        // Buffer group
+        // Buffer group — pre-allocate enough buffers for 4 concurrent
+        // 4K-class encoders; default internal group size is too small.
         ret = mpp_buffer_group_get(&buf_group, MPP_BUFFER_TYPE_DRM,
                                    MPP_BUFFER_INTERNAL, "he", NULL);
         if (ret != MPP_OK) { fprintf(stderr, "mpp_buffer_group_get failed\n"); return false; }
+        ret = mpp_buffer_group_limit_config(buf_group, frame_size, 8);
+        if (ret != MPP_OK) { fprintf(stderr, "mpp_buffer_group_limit_config failed\n"); return false; }
 
         return true;
     }
