@@ -87,7 +87,7 @@ void SessionRunner::run(const std::string& session_dir,
                 ImuOrientation::HORIZONTAL_TOP, false, true};
             CameraConfig jhh02{
                 "jhh02", kJhh2Vid, kJhh2Pid, 2, 2560, 720, 30, 8000000, 15, true,
-                ImuOrientation::HORIZONTAL_TOP, false, true};
+                ImuOrientation::HORIZONTAL_TOP, true, false};
             auto sixcam = std::make_unique<SixCamSensor>(
                 jhh04, jhh02, cameras_.sixcam.jhh04_path, cameras_.sixcam.jhh02_path,
                 session_dir, session_number, session_timestamp, session_running_,
@@ -109,8 +109,8 @@ void SessionRunner::run(const std::string& session_dir,
         // ── 2. 腕部相机 (六目启流完成后) ──
         for (const CameraSlot& camera : active_profile_cameras(cameras_)) {
             CameraConfig config = camera.config;
-            config.output_h265 = false;
-            config.output_y8 = true;
+            config.output_h265 = true;
+            config.output_y8 = false;
             auto video = std::make_unique<VideoSensor>(
                 config, session_dir, camera.device_path,
                 session_number, session_timestamp, session_running_, capture_control_);
@@ -162,7 +162,7 @@ void SessionRunner::run(const std::string& session_dir,
                 ImuOrientation::HORIZONTAL_TOP, false, true};
             CameraConfig jhh02{
                 "jhh02", kJhh2Vid, kJhh2Pid, 2, 2560, 720, 30, 8000000, 15, true,
-                ImuOrientation::HORIZONTAL_TOP, false, true};
+                ImuOrientation::HORIZONTAL_TOP, true, false};
             auto sixcam = std::make_unique<SixCamSensor>(
                 jhh04, jhh02, cameras_.sixcam.jhh04_path, cameras_.sixcam.jhh02_path,
                 session_dir, session_number, session_timestamp, session_running_,

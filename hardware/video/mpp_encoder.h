@@ -118,6 +118,7 @@ struct MppEncoder {
 
         ret = mpi->encode_put_frame(ctx, frame);
         mpp_frame_deinit(&frame);
+        mpp_buffer_put(buf);
 
         // 取编码结果 (循环清空 MPP 输出队列, 释放编码器内部 buffer)
         size_t written = 0;
