@@ -87,7 +87,7 @@ void SessionRunner::run(const std::string& session_dir,
                 ImuOrientation::HORIZONTAL_TOP, false, false};
             CameraConfig jhh02{
                 "jhh02", kJhh2Vid, kJhh2Pid, 2, 2560, 720, 30, 8000000, 15, true,
-                ImuOrientation::HORIZONTAL_TOP, options_.use_h265, false};
+                ImuOrientation::HORIZONTAL_TOP, false, false};
             auto sixcam = std::make_unique<SixCamSensor>(
                 jhh04, jhh02, cameras_.sixcam.jhh04_path, cameras_.sixcam.jhh02_path,
                 session_dir, session_number, session_timestamp, session_running_,
@@ -162,7 +162,7 @@ void SessionRunner::run(const std::string& session_dir,
                 ImuOrientation::HORIZONTAL_TOP, false, false};
             CameraConfig jhh02{
                 "jhh02", kJhh2Vid, kJhh2Pid, 2, 2560, 720, 30, 8000000, 15, true,
-                ImuOrientation::HORIZONTAL_TOP, options_.use_h265, false};
+                ImuOrientation::HORIZONTAL_TOP, false, false};
             auto sixcam = std::make_unique<SixCamSensor>(
                 jhh04, jhh02, cameras_.sixcam.jhh04_path, cameras_.sixcam.jhh02_path,
                 session_dir, session_number, session_timestamp, session_running_,
