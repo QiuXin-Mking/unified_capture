@@ -203,7 +203,7 @@ protected:
                 if (empty_polls == 1) {
                     fprintf(stderr, "[%s] DBG collect: dequeue NULL (first)\n", cfg_.name);
                 }
-                usleep(1000);
+                device_.wait_for_frame(10);  // wait up to 10ms for next frame
                 continue;
             }
 

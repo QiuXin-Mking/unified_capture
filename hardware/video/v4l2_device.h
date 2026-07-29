@@ -23,6 +23,7 @@
 #include <linux/videodev2.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
+#include <sys/poll.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <cerrno>
@@ -245,6 +246,16 @@ public:
 
     int actual_width()  const { return actual_width_; }
     int actual_height() const { return actual_height_; }
+
+    // Wait until a buffer is ready (or timeout_ms expires).
+    // Returns true if data is available, false on timeout/error.
+    bool wait_for_frame(int timeout_ms) {
+        struct pollfd pfd = {};
+        pfd.fd = fd_;
+        pfd.events = POLLIN;
+        int r = ::poll(&pfd, 1, timeout_ms);
+        return r > 0 && (pfd.revents & POLLIN);
+    }
 
 private:
     int xioctl(unsigned long request, void* arg) {

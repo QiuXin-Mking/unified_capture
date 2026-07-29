@@ -317,7 +317,7 @@ private:
                 if (empty_polls == 1) {
                     fprintf(stderr, "[%s] DBG collect: dequeue NULL (first)\n", ch.name);
                 }
-                usleep(1000);
+                ch.device.wait_for_frame(10);  // wait up to 10ms for next frame
                 continue;
             }
 
