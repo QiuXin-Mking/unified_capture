@@ -74,7 +74,7 @@ struct MppEncoder {
         ret = mpp_buffer_group_get(&buf_group, MPP_BUFFER_TYPE_DRM,
                                    MPP_BUFFER_INTERNAL, "he", NULL);
         if (ret != MPP_OK) { fprintf(stderr, "mpp_buffer_group_get failed\n"); return false; }
-        ret = mpp_buffer_group_limit_config(buf_group, 0, 16);
+        ret = mpp_buffer_group_limit_config(buf_group, 0, 4);
         if (ret != MPP_OK) {
             fprintf(stderr, "mpp_buffer_group_limit_config failed %d\n", ret);
             return false;
