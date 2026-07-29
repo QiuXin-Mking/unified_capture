@@ -308,7 +308,7 @@ private:
 
         while (running_) {
             size_t mjpg_len = 0;
-            const uint8_t* mjpg = ch.device.dequeue_frame(mjpg_len);
+            uint8_t* mjpg = ch.device.dequeue_frame(mjpg_len);
             if (!mjpg) {
                 empty_polls++;
                 if (empty_polls == 1) {

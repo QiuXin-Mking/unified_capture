@@ -190,7 +190,7 @@ public:
     }
 
     // ── dequeue_frame: non-blocking DQBUF → nullptr on EAGAIN ──
-    const uint8_t* dequeue_frame(size_t& len) {
+    uint8_t* dequeue_frame(size_t& len) {
         struct v4l2_buffer buf = {};
         buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         buf.memory = V4L2_MEMORY_MMAP;
