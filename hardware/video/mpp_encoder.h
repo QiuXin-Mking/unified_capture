@@ -22,9 +22,10 @@ struct MppEncoder {
 
     bool init(uint32_t w, uint32_t h, int bps, int fps, int gop) {
         width = w; height = h;
-        hor_stride = w;
+        // MPP requires horizontal stride aligned to 64 bytes for NV12.
+        hor_stride = (w + 63) & ~63U;
         ver_stride = h;
-        frame_size = w * h * 3 / 2;
+        frame_size = hor_stride * h * 3 / 2;
         MPP_RET ret;
 
         ret = mpp_create(&ctx, &mpi);

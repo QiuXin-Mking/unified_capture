@@ -228,10 +228,12 @@ protected:
             }
 
             // ★ 按实际 JPEG 尺寸分配 nv12 (第一帧时分配)
+            // 注意: MPP 要求 NV12 行跨度 64 字节对齐
             if (!nv12 || w != nv12_w || h != nv12_h) {
                 delete[] nv12;
                 nv12_w = w; nv12_h = h;
-                nv12_size = w * h * 3 / 2;
+                nv12_stride_ = (w + 63) & ~63;
+                nv12_size = nv12_stride_ * h * 3 / 2;
                 nv12 = new (std::nothrow) uint8_t[nv12_size];
                 if (!nv12) {
                     fprintf(stderr, "[%s] FATAL: nv12 alloc failed (w=%d h=%d size=%u)\n",
@@ -239,8 +241,8 @@ protected:
                     device_.requeue_frame();
                     break;
                 }
-                fprintf(stderr, "[%s] actual resolution %dx%d (cfg=%dx%d)\n",
-                        cfg_.name, w, h, cfg_.width, cfg_.height);
+                fprintf(stderr, "[%s] actual resolution %dx%d (cfg=%dx%d) stride=%d\n",
+                        cfg_.name, w, h, cfg_.width, cfg_.height, nv12_stride_);
             }
 
             uint32_t bgr_size = w * h * 3;
@@ -257,7 +259,7 @@ protected:
                 }
 
                 // → BGR → NV12 → MPP H.265 → FIFO + Y8
-                bgr_to_nv12(bgr, w, h, nv12);
+                bgr_to_nv12(bgr, w, h, nv12_stride_, nv12);
 
                 if (cfg_.output_h265) {
                     size_t h265_bytes = mpp_.put(nv12, fifo_fp_);
@@ -416,6 +418,9 @@ private:
 
     // IMU queue
     FrameQueue imu_queue_{4};
+
+    // NV12 stride (MPP 要求 64 字节对齐)
+    int nv12_stride_ = 0;
 
     bool initialized_ = false;
 };
