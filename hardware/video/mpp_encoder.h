@@ -18,9 +18,12 @@ struct MppEncoder {
     MppBufferGroup buf_group = nullptr;
     uint32_t frame_size = 0;
     uint32_t width = 0, height = 0;
+    uint32_t hor_stride = 0, ver_stride = 0;
 
     bool init(uint32_t w, uint32_t h, int bps, int fps, int gop) {
         width = w; height = h;
+        hor_stride = w;
+        ver_stride = h;
         frame_size = w * h * 3 / 2;
         MPP_RET ret;
 
@@ -36,8 +39,8 @@ struct MppEncoder {
         prep.change      = 0xFFFFFFFF;
         prep.width       = w;
         prep.height      = h;
-        prep.hor_stride  = w;
-        prep.ver_stride  = h;
+        prep.hor_stride  = hor_stride;
+        prep.ver_stride  = ver_stride;
         prep.format      = MPP_FMT_YUV420SP;
         ret = mpi->control(ctx, MPP_ENC_SET_PREP_CFG, &prep);
         if (ret != MPP_OK) { fprintf(stderr, "MPP_ENC_SET_PREP_CFG failed\n"); return false; }
@@ -66,13 +69,10 @@ struct MppEncoder {
         ret = mpi->control(ctx, MPP_ENC_SET_CODEC_CFG, &codec);
         if (ret != MPP_OK) { fprintf(stderr, "MPP_ENC_SET_CODEC_CFG failed\n"); return false; }
 
-        // Buffer group — pre-allocate enough buffers for 4 concurrent
-        // 4K-class encoders; default internal group size is too small.
+        // Buffer group
         ret = mpp_buffer_group_get(&buf_group, MPP_BUFFER_TYPE_DRM,
                                    MPP_BUFFER_INTERNAL, "he", NULL);
         if (ret != MPP_OK) { fprintf(stderr, "mpp_buffer_group_get failed\n"); return false; }
-        ret = mpp_buffer_group_limit_config(buf_group, frame_size, 8);
-        if (ret != MPP_OK) { fprintf(stderr, "mpp_buffer_group_limit_config failed\n"); return false; }
 
         return true;
     }
@@ -83,8 +83,8 @@ struct MppEncoder {
         mpp_frame_init(&frame);
         mpp_frame_set_width(frame, width);
         mpp_frame_set_height(frame, height);
-        mpp_frame_set_hor_stride(frame, width);
-        mpp_frame_set_ver_stride(frame, height);
+        mpp_frame_set_hor_stride(frame, hor_stride);
+        mpp_frame_set_ver_stride(frame, ver_stride);
         mpp_frame_set_fmt(frame, MPP_FMT_YUV420SP);
         mpp_frame_set_eos(frame, 0);
 
