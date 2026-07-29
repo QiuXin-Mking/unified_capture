@@ -146,12 +146,16 @@ protected:
             fprintf(stderr, "[%s] DBG: V4L2 open OK\n", ch.name);
         }
 
-        // ── 3. MPP 编码器 (仅 jhh02 需要) ──
+        // ── 3. MPP 编码器 (仅 jhh02 需要), 使用 V4L2 实际协商分辨率 ──
         for (int i = 0; i < 2; i++) {
             auto& ch = ch_[i];
             if (ch.output_h265) {
-                fprintf(stderr, "[%s] DBG: MPP init %dx%d...\n", ch.name, ch.width, ch.height);
-                if (!ch.mpp.init(ch.width, ch.height, ch.bitrate, ch.fps, ch.gop)) {
+                int enc_w = ch.device.actual_width();
+                int enc_h = ch.device.actual_height();
+                if (enc_w <= 0 || enc_h <= 0) { enc_w = ch.width; enc_h = ch.height; }
+                fprintf(stderr, "[%s] DBG: MPP init %dx%d (cfg=%dx%d)...\n",
+                        ch.name, enc_w, enc_h, ch.width, ch.height);
+                if (!ch.mpp.init(enc_w, enc_h, ch.bitrate, ch.fps, ch.gop)) {
                     fprintf(stderr, "[%s] MPP init failed\n", ch.name);
                     return;
                 }

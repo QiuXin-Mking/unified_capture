@@ -79,10 +79,14 @@ protected:
         }
         fprintf(stderr, "[%s] DBG setup: V4L2 open OK\n", cfg_.name);
 
-        // ── 2. MPP 编码器 ──
+        // ── 2. MPP 编码器 (使用 V4L2 实际协商分辨率) ──
         if (cfg_.output_h265) {
-            fprintf(stderr, "[%s] DBG setup: MPP init %dx%d...\n", cfg_.name, cfg_.width, cfg_.height);
-            if (!mpp_.init(cfg_.width, cfg_.height, cfg_.bitrate, cfg_.fps, cfg_.gop)) {
+            int enc_w = device_.actual_width();
+            int enc_h = device_.actual_height();
+            if (enc_w <= 0 || enc_h <= 0) { enc_w = cfg_.width; enc_h = cfg_.height; }
+            fprintf(stderr, "[%s] DBG setup: MPP init %dx%d (cfg=%dx%d)...\n",
+                    cfg_.name, enc_w, enc_h, cfg_.width, cfg_.height);
+            if (!mpp_.init(enc_w, enc_h, cfg_.bitrate, cfg_.fps, cfg_.gop)) {
                 fprintf(stderr, "[%s] MPP init failed\n", cfg_.name);
                 return;
             }
