@@ -26,8 +26,8 @@ std::vector<std::pair<std::string, bool>> status_cameras(
         result.emplace_back("wrist_left", cameras.wrist[0].enabled);
         result.emplace_back("wrist_right", cameras.wrist[1].enabled);
         if (cameras.sixcam.enabled) {
-            result.emplace_back("jhh04", cameras.sixcam.!jhh04_path.empty());
-            result.emplace_back("jhh02", cameras.sixcam.!jhh02_path.empty());
+            result.emplace_back("jhh04", !cameras.sixcam.jhh04_path.empty());
+            result.emplace_back("jhh02", !cameras.sixcam.jhh02_path.empty());
         }
         return result;
     }
@@ -36,8 +36,8 @@ std::vector<std::pair<std::string, bool>> status_cameras(
         result.emplace_back(camera.config.name, camera.enabled);
     }
     if (cameras.sixcam.enabled) {
-        result.emplace_back("jhh04", cameras.sixcam.!jhh04_path.empty());
-        result.emplace_back("jhh02", cameras.sixcam.!jhh02_path.empty());
+        result.emplace_back("jhh04", !cameras.sixcam.jhh04_path.empty());
+        result.emplace_back("jhh02", !cameras.sixcam.jhh02_path.empty());
     }
     return result;
 }
