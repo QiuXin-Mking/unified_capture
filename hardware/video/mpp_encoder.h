@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 
 #include <rockchip/rk_mpi.h>
 #include <rockchip/mpp_frame.h>
@@ -19,6 +20,7 @@ struct MppEncoder {
     uint32_t frame_size = 0;
     uint32_t width = 0, height = 0;
     uint32_t hor_stride = 0, ver_stride = 0;
+    mutable std::mutex mutex_;
 
     bool init(uint32_t w, uint32_t h, int bps, int fps, int gop) {
         width = w; height = h;
@@ -80,6 +82,7 @@ struct MppEncoder {
 
     // 编码一帧 NV12 → H.265 NAL, 直接写 FILE*
     size_t put(uint8_t* nv12, FILE* fp) {
+        std::lock_guard<std::mutex> lock(mutex_);
         MppFrame frame;
         mpp_frame_init(&frame);
         mpp_frame_set_width(frame, width);
@@ -128,6 +131,7 @@ struct MppEncoder {
 
     // Flush 编码器 (发送 EOS, 排空残余帧)
     size_t flush(FILE* fp) {
+        std::lock_guard<std::mutex> lock(mutex_);
         size_t total = 0;
         MppFrame eos;
         mpp_frame_init(&eos);
