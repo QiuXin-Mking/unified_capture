@@ -69,16 +69,10 @@ struct MppEncoder {
         ret = mpi->control(ctx, MPP_ENC_SET_CODEC_CFG, &codec);
         if (ret != MPP_OK) { fprintf(stderr, "MPP_ENC_SET_CODEC_CFG failed\n"); return false; }
 
-        // Buffer group — pre-allocate a pool of buffers so concurrent
-        // encoders do not fight over the default small group.
+        // Buffer group
         ret = mpp_buffer_group_get(&buf_group, MPP_BUFFER_TYPE_DRM,
                                    MPP_BUFFER_INTERNAL, "he", NULL);
         if (ret != MPP_OK) { fprintf(stderr, "mpp_buffer_group_get failed\n"); return false; }
-        ret = mpp_buffer_group_limit_config(buf_group, 0, 4);
-        if (ret != MPP_OK) {
-            fprintf(stderr, "mpp_buffer_group_limit_config failed %d\n", ret);
-            return false;
-        }
 
         return true;
     }
@@ -116,15 +110,18 @@ struct MppEncoder {
         ret = mpi->encode_put_frame(ctx, frame);
         mpp_frame_deinit(&frame);
 
-        // 取编码结果
-        MppPacket pkt = nullptr;
+        // 取编码结果 (循环清空 MPP 输出队列, 释放编码器内部 buffer)
         size_t written = 0;
-        MPP_RET pkt_ret = mpi->encode_get_packet(ctx, &pkt);
-        if (!pkt_ret && pkt && mpp_packet_get_length(pkt) > 0) {
-            written = mpp_packet_get_length(pkt);
-            fwrite(mpp_packet_get_data(pkt), 1, written, fp);
+        MppPacket pkt = nullptr;
+        while (!mpi->encode_get_packet(ctx, &pkt) && pkt) {
+            size_t len = mpp_packet_get_length(pkt);
+            if (len > 0) {
+                fwrite(mpp_packet_get_data(pkt), 1, len, fp);
+                written += len;
+            }
+            mpp_packet_deinit(&pkt);
+            pkt = nullptr;
         }
-        if (pkt) mpp_packet_deinit(&pkt);
         return written;
     }
 
