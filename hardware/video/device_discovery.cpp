@@ -124,6 +124,26 @@ bool enumerate_mjpeg_formats(const std::string& dev_path,
 
 // ── sysfs V4L2 device scan ──
 
+// Skip metadata-only nodes (e.g. some UVC cameras expose two /dev/video
+// nodes, only one of which advertises video formats).
+static bool has_video_capture_formats(const std::string& dev_path) {
+    int fd = ::open(dev_path.c_str(), O_RDWR | O_NONBLOCK);
+    if (fd < 0) return false;
+
+    struct v4l2_capability cap = {};
+    if (ioctl(fd, VIDIOC_QUERYCAP, &cap) < 0 ||
+        !(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
+        ::close(fd);
+        return false;
+    }
+
+    struct v4l2_fmtdesc fmtdesc = {};
+    fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    bool has_format = (ioctl(fd, VIDIOC_ENUM_FMT, &fmtdesc) == 0);
+    ::close(fd);
+    return has_format;
+}
+
 std::vector<DiscoveredDevice> scan_v4l2_devices() {
     std::vector<DiscoveredDevice> result;
 
@@ -156,6 +176,12 @@ std::vector<DiscoveredDevice> scan_v4l2_devices() {
         std::string product = read_sysfs_file(usb_dev + "/product");
 
         if (vid == 0) continue;  // Not a USB device
+
+        // Skip metadata-only /dev/video nodes that do not expose any
+        // capture formats. Many UVC cameras enumerate a second node for
+        // metadata; the actual video node lists MJPEG/YUYV formats.
+        std::string dev_node = "/dev/" + std::string(entry->d_name);
+        if (!has_video_capture_formats(dev_node)) continue;
 
         DiscoveredDevice dev;
         dev.path    = "/dev/" + std::string(entry->d_name);
