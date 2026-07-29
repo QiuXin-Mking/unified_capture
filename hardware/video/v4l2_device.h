@@ -206,7 +206,7 @@ public:
         dequeued_index_ = buf.index;
         dequeued_len_   = buf.bytesused;
         len = dequeued_len_;
-        return (const uint8_t*)buffers_[dequeued_index_].start;
+        return (uint8_t*)buffers_[dequeued_index_].start;
     }
 
     // ── requeue_frame: QBUF last dequeued index ──
