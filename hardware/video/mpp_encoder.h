@@ -69,10 +69,16 @@ struct MppEncoder {
         ret = mpi->control(ctx, MPP_ENC_SET_CODEC_CFG, &codec);
         if (ret != MPP_OK) { fprintf(stderr, "MPP_ENC_SET_CODEC_CFG failed\n"); return false; }
 
-        // Buffer group
+        // Buffer group — pre-allocate a pool of buffers so concurrent
+        // encoders do not fight over the default small group.
         ret = mpp_buffer_group_get(&buf_group, MPP_BUFFER_TYPE_DRM,
                                    MPP_BUFFER_INTERNAL, "he", NULL);
         if (ret != MPP_OK) { fprintf(stderr, "mpp_buffer_group_get failed\n"); return false; }
+        ret = mpp_buffer_group_limit_config(buf_group, 0, 16);
+        if (ret != MPP_OK) {
+            fprintf(stderr, "mpp_buffer_group_limit_config failed %d\n", ret);
+            return false;
+        }
 
         return true;
     }
