@@ -34,9 +34,9 @@ std::string profile_cameras_json(const CameraDiscoveryResult& cameras) {
     }
     if (cameras.sixcam.enabled) {
         json += ",\"jhh04\":" +
-                std::string(cameras.sixcam.jhh04_id > 0 ? "true" : "false");
+                std::string(!cameras.sixcam.jhh04_path.empty() ? "true" : "false");
         json += ",\"jhh02\":" +
-                std::string(cameras.sixcam.jhh02_id > 0 ? "true" : "false");
+                std::string(!cameras.sixcam.jhh02_path.empty() ? "true" : "false");
     }
     json += "}";
     return json;

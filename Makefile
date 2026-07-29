@@ -1,6 +1,6 @@
 # Makefile — unified capture production build and host-only tests
 #
-# Production builds require the Nori SDK, Rockchip MPP, and libsurvive.
+# Production builds require Rockchip MPP, libturbojpeg, libgpiod, and libsurvive.
 
 CXX      ?= g++
 CC       ?= gcc
@@ -136,5 +136,5 @@ help:
 	@echo "  MPP_INC    Rockchip MPP include path (default: /usr/include/rockchip)"
 	@echo ""
 	@echo "Cross-compile:"
-	@echo '  make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \'
-	@echo '       NORI_INC=/path/to/nori/include NORI_LIB=/path/to/nori/lib'
+	@echo "  make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \\"
+	@echo "       MPP_INC=/path/to/rockchip/include"

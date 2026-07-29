@@ -8,8 +8,6 @@ set(CMAKE_C_STANDARD 11)
 add_compile_options(-Wall -g -O2)
 
 # SDK paths may be overridden for an RK3588 target environment.
-set(NORI_INC "/usr/local/Nori_Xvision/include" CACHE PATH "Nori Xvision SDK include path")
-set(NORI_LIB "/usr/local/Nori_Xvision/lib" CACHE PATH "Nori Xvision SDK library path")
 set(MPP_INC "/usr/include/rockchip" CACHE PATH "Rockchip MPP include path")
 set(SURVIVE_DIR "/root/projects/libsurvive" CACHE PATH "libsurvive source and runtime path")
 
@@ -31,7 +29,6 @@ add_executable(unified_capture
 
 target_include_directories(unified_capture PRIVATE
     ${CMAKE_SOURCE_DIR}
-    ${NORI_INC}/Nori_Xvision_API
     ${MPP_INC}
     ${SURVIVE_DIR}/include/libsurvive
     ${SURVIVE_DIR}/include
@@ -41,12 +38,10 @@ target_include_directories(unified_capture PRIVATE
 )
 
 target_link_directories(unified_capture PRIVATE
-    ${NORI_LIB}
     ${SURVIVE_DIR}/bin
 )
 
 target_link_libraries(unified_capture PRIVATE
-    Nori_Xvision_Std
     rockchip_mpp
     turbojpeg
     gpiod
@@ -58,6 +53,6 @@ target_link_libraries(unified_capture PRIVATE
 )
 
 set_target_properties(unified_capture PROPERTIES
-    BUILD_RPATH "${NORI_LIB};${SURVIVE_DIR}/bin"
-    INSTALL_RPATH "${NORI_LIB};${SURVIVE_DIR}/bin"
+    BUILD_RPATH "${SURVIVE_DIR}/bin"
+    INSTALL_RPATH "${SURVIVE_DIR}/bin"
 )

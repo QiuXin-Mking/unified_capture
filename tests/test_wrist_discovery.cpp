@@ -16,7 +16,7 @@ void assert_wrist_encoding(const WristDiscoveryResult& result) {
     for (const auto& camera : result.cameras) {
         assert(camera.config.output_h265);
         assert(!camera.config.output_y8);
-        assert(camera.config.imu_orientation == ImuOrientation::VERTICAL_LEFT);
+        assert(camera.config.imu_orientation == ImuOrientation::HORIZONTAL_TOP);
     }
 }
 
