@@ -82,7 +82,7 @@ protected:
             if (legacy_queue_->try_pop(frame)) {
                 total_frames++;
                 if (fp_ && !frame.data.empty()) {
-                    uint8_t imu_buf[256] = {};
+                    uint8_t imu_buf[384] = {};
                     uint32_t imu_len = 0;
 
                     // 根据码带方向选择扫描策略

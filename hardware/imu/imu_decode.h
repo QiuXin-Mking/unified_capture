@@ -36,9 +36,10 @@ constexpr int IMU_VAL0   = 50;
 constexpr int IMU_VAL1   = 220;
 constexpr int IMU_USIZE  = 8;
 constexpr int IMU_GROUP  = 16;
-constexpr int IMU_TARGET = 192;  // 12 groups × 16 bytes
+constexpr int IMU_TARGET = 272;  // 1 header + 11 acc/gyro + 5 mag = 17 × 16 bytes
 constexpr float ACC_SENS = 4000.0f / 32768.0f;
 constexpr float GYR_SENS = 1000.0f / 32768.0f;
+constexpr float MAG_SENS = 1.0f;  // 磁力计 raw LSB (芯片待确认, 需标定后替换)
 
 // ---- 大端序解码 ----
 static inline uint32_t be_u32(const uint8_t* b, int off) {
@@ -255,8 +256,8 @@ static uint32_t imu_read_luma_horizontal(const uint8_t* y, int w, int h,
             uint32_t count = imu_luma_line_decode(
                 y + static_cast<size_t>(row) * stride, w, line_buf.data());
             if (count > 0) {
-                if (total + count > 256) {
-                    count = 256 - total;
+                if (total + count > 384) {
+                    count = 384 - total;
                 }
                 memcpy(buf + total, line_buf.data(), count);
                 total += count;
@@ -292,11 +293,11 @@ static uint32_t imu_read_luma_vertical(const uint8_t* y, int w, int h,
             uint32_t count =
                 imu_luma_line_decode(column.data(), h, line_buf.data());
             if (count > 0) {
-                if (count > 256) {
-                    count = 256;
+                if (count > 384) {
+                    count = 384;
                 }
-                if (total + count > 256) {
-                    count = 256 - total;
+                if (total + count > 384) {
+                    count = 384 - total;
                 }
                 memcpy(buf + total, line_buf.data(), count);
                 total += count;
@@ -313,7 +314,7 @@ static uint32_t imu_read_luma_vertical(const uint8_t* y, int w, int h,
 }
 
 // ---- 解析 IMU 数据, 写 JSONL ----
-// {"frame_idx":N,"t_us":N,"ax_mg":f,"ay_mg":f,"az_mg":f,"gx_mdps":f,"gy_mdps":f,"gz_mdps":f,"exp_start_us":N,"exp_end_us":N}
+// acc+gyro 样本后紧跟磁力计样本 (同 16B/组, off=(1+ns)*16 开始)
 static void imu_parse_and_write(const uint8_t* buf, uint32_t len,
                                 uint64_t frame_idx, FILE* fp) {
     if (len < IMU_GROUP) return;
@@ -331,6 +332,7 @@ static void imu_parse_and_write(const uint8_t* buf, uint32_t len,
     uint64_t es = be_u32(hdr, 8);
     uint64_t ee = be_u32(hdr, 12);
 
+    // -- acc + gyro 样本 (前 ns 组) --
     for (int i = 0; i < ns; i++) {
         int off = (1 + i) * IMU_GROUP;
         if (off + IMU_GROUP > (int)len) break;
@@ -351,6 +353,23 @@ static void imu_parse_and_write(const uint8_t* buf, uint32_t len,
                 ax * ACC_SENS, ay * ACC_SENS, az * ACC_SENS,
                 gx * GYR_SENS, gy * GYR_SENS, gz * GYR_SENS,
                 (unsigned long long)es, (unsigned long long)ee);
+    }
+
+    // -- 磁力计样本 (ns 组之后, 同 16B/组) --
+    int mag_off = (1 + ns) * IMU_GROUP;
+    while (mag_off + IMU_GROUP <= (int)len) {
+        const uint8_t* s = buf + mag_off;
+        uint32_t t_us = be_u32(s, 0);
+        int16_t mx = be_s16(s, 4), my = be_s16(s, 6), mz = be_s16(s, 8);
+
+        fprintf(fp,
+                "{\"frame_idx\":%llu,\"t_us\":%u,"
+                "\"mx_raw\":%d,\"my_raw\":%d,\"mz_raw\":%d,"
+                "\"exp_start_us\":%llu,\"exp_end_us\":%llu}\n",
+                (unsigned long long)frame_idx, t_us,
+                mx, my, mz,
+                (unsigned long long)es, (unsigned long long)ee);
+        mag_off += IMU_GROUP;
     }
     fflush(fp);
 }

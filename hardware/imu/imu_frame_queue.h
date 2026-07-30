@@ -9,7 +9,7 @@ struct ImuFrame {
     uint64_t frame_idx = 0;
     uint64_t pts_us = 0;
     uint32_t size = 0;
-    std::array<uint8_t, 256> data{};
+    std::array<uint8_t, 384> data{};
 };
 
 using ImuFrameQueue = BoundedQueue<ImuFrame>;
