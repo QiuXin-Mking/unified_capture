@@ -157,3 +157,7 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，每条命令以换行�
 - AS5600 驱动为纯 C (`hardware/as5600/as5600.c`)，通过 `extern "C"` 在 C++ 中调用
 - MPP 编码器需要 NV12 输入，实际 JPEG 解码尺寸可能与配置尺寸不同，代码按首帧动态分配 NV12 buffer
 - VIVE Tracker 在 sysfs 中自动检测，不需要手动禁用
+
+## Git Commit 规范
+
+严格遵循 `.claude/COMMIT_CONVENTIONS.md`，中文描述 + 详细说明改动与收益。违规将被 PreToolUse hook 拦截。

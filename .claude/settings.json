@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "prompt",
+            "if": "Bash(git commit*)",
+            "prompt": "按 .claude/COMMIT_CONVENTIONS.md 校验。第1行标题: type: 中文概括(≤50字)，type限feat/fix/docs/style/refactor/perf/test/build。第3行起细则: 2~8条 - 开头的改了什么+收益。细则数须与代码修改量正相关(10行→2条, 50行→3~4条, 200行→5~6条, 500+行→7~8条)。标题中文、有细则、不模糊。合规回 {\"ok\":true} 否则 {\"ok\":false,\"reason\":\"原因\"}。--allow-empty-message 放行。",
+            "model": "haiku",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
