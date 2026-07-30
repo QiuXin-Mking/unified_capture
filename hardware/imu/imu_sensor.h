@@ -6,6 +6,9 @@
 #include "hardware/common/sensor.h"
 #include "hardware/imu/imu_decode.h"
 #include "hardware/imu/imu_frame_queue.h"
+// @deprecated: core/frame_queue.h 仅用于以下 legacy 构造函数和
+// legacy_queue_ 代码路径，session_runner.cpp 已全部使用 ImuFrameQueue 构造。
+// 后续可一并删除此 include、legacy 构造函数和 collect() 中 legacy_queue_ 分支。
 #include "core/frame_queue.h"
 #include "core/camera_config.h"
 
@@ -13,6 +16,9 @@
 
 class ImuSensor : public Sensor {
 public:
+    // @deprecated: legacy 构造函数，使用旧的 FrameQueue (BGRFrame)。
+    // session_runner.cpp 已全部使用下方 ImuFrameQueue 构造，此构造函数无调用方。
+    // 后续可连同 FrameQueue/BGRFrame/legacy_queue_/collect() 旧分支一并删除。
     ImuSensor(const std::string& camera_name,
               const std::string& session_dir,
               FrameQueue& queue,
@@ -67,6 +73,10 @@ protected:
                 }
             }
         }
+        // @deprecated: legacy IMU 解码路径 (从 BGR 帧扫描码带)。
+        // session_runner.cpp 已全部使用 ImuFrameQueue，
+        // IMU 解码现在在 VideoFrameProcessor 中完成 (imu_read_luma_* )。
+        // 此分支永远不执行 (legacy_queue_ 始终为 nullptr)，后续可删除。
         while (legacy_queue_ && (running_ || !legacy_queue_->empty())) {
             BGRFrame frame;
             if (legacy_queue_->try_pop(frame)) {
@@ -106,6 +116,8 @@ protected:
 private:
     std::string camera_name_;
     std::string session_dir_;
+    // @deprecated: legacy_queue_ 仅在不使用的 legacy 构造中赋值，
+    // 生产路径始终为 nullptr。后续可连同 FrameQueue/BGRFrame 一并删除。
     FrameQueue* legacy_queue_ = nullptr;
     ImuFrameQueue* compact_queue_ = nullptr;
     int session_num_;

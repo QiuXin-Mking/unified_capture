@@ -13,6 +13,8 @@
 #include <thread>
 
 #include "core/time_utils.h"
+// @deprecated: core/frame_queue.h 已废弃 (BGRFrame/FrameQueue 无生产引用)，
+// Sensor 基类不依赖它，保留此 include 仅为兼容历史代码，后续可删除。
 #include "core/frame_queue.h"
 
 class SimpleBarrier;

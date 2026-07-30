@@ -1,6 +1,11 @@
 #pragma once
 /*
  * bgr2nv12.h — BGR24 → NV12 (YUV420SP) 色域转换
+ *
+ * @deprecated 已废弃。新管线使用 mjpeg_yuv_decoder.h (tjDecompressToYUVPlanes
+ *             直接解码为 YUV 平面) + yuv_to_nv12.h (YUV 平面 → NV12 重排)，
+ *             跳过 BGR 中间步骤，无需色域转换。
+ *             保留此文件仅供历史参考，生产代码中无任何引用。
  */
 
 #include <cstdint>

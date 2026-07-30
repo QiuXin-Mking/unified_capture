@@ -2,6 +2,12 @@
 /*
  * frame_queue.h — 线程安全 BGR 帧队列 (Video → IMU)
  *
+ * @deprecated 已废弃。新管线中 IMU 解码移到 VideoFrameProcessor 内部完成
+ *             (mjpeg_yuv_decoder → Y 平面 → imu_read_luma_* )，
+ *             IMU 数据经 ImuFrameQueue (BoundedQueue<ImuFrame>) 传递，
+ *             不再需要 BGR 中间格式。BGRFrame / FrameQueue 已无生产引用。
+ *             保留此文件仅供历史参考。
+ *
  * Video 线程: try_push (非阻塞, 满了就丢)
  * IMU 线程:   pop_wait (阻塞等帧)
  * 停止时:     IMU 线程用 running || !empty() 清空残余帧

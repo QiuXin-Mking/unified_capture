@@ -51,6 +51,8 @@ static inline int16_t be_s16(const uint8_t* b, int off) {
 }
 
 // ---- 解码二维码带中的一行数据 ----
+// @deprecated: 仅被 imu_read_frame_horizontal/vertical 调用，
+// 这两个函数已被 imu_read_luma_* 替代。后续可删除。
 static uint32_t imu_line_decode(const uint8_t* bgr_row, int row_width, uint8_t* out) {
     constexpr int C = 3, G_OFF = 1;
 
@@ -101,6 +103,10 @@ static uint32_t imu_line_decode(const uint8_t* bgr_row, int row_width, uint8_t* 
     return byte_count;
 }
 
+// @deprecated: 旧 BGR 管线 IMU 解码。新管线在 VideoFrameProcessor 中
+// 使用 imu_read_luma_* 直接从 Y 平面解码，无需 BGR 中间格式。
+// 此函数仅被 imu_sensor.h 的 legacy 代码路径调用，该路径已废弃。
+// 后续可连同 imu_line_decode/imu_column_decode 一并删除。
 // ============================================================
 // 横向扫描 (JHH2/JHH02): 从顶部边缘的行向中间交叉扫描 (底部无码带)
 // ============================================================
@@ -133,6 +139,7 @@ static uint32_t imu_read_frame_horizontal(const uint8_t* bgr, int w, int h, uint
 }
 
 // ---- 竖向: 提取一列像素到连续缓冲区, 然后复用 imu_line_decode ----
+// @deprecated: 仅被 imu_read_frame_vertical 调用，该函数已废弃。后续可删除。
 static uint32_t imu_column_decode(const uint8_t* bgr, int col, int w, int h, uint8_t* out) {
     constexpr int C = 3;
     // 提取列: 每行同一列位置的 3 字节 BGR
@@ -149,6 +156,9 @@ static uint32_t imu_column_decode(const uint8_t* bgr, int col, int w, int h, uin
     return result;
 }
 
+// @deprecated: 旧 BGR 管线 IMU 解码。新管线使用 imu_read_luma_vertical。
+// 此函数仅被 imu_sensor.h 的 legacy 代码路径调用，该路径已废弃。
+// 后续可连同 imu_line_decode/imu_column_decode 一并删除。
 // ============================================================
 // 竖向扫描 (JHH04): 从左/右边缘的列向中间交叉扫描
 // ============================================================
