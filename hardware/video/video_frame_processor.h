@@ -18,6 +18,7 @@
 struct VideoFrameProcessorOptions {
     const char* camera_name = "camera";
     bool output_h265 = false;
+    bool output_y8 = false;
     bool has_imu = false;
     ImuOrientation imu_orientation = ImuOrientation::HORIZONTAL_TOP;
     int expected_width = 0;
@@ -38,11 +39,13 @@ public:
     VideoFrameProcessor(VideoFrameProcessorOptions options,
                         MppEncoder* encoder,
                         FILE* h265_fp,
+                        FILE* y8_fp,
                         ImuFrameQueue* imu_queue,
                         VideoCaptureControl* control)
         : options_(std::move(options))
         , encoder_(encoder)
         , h265_fp_(h265_fp)
+        , y8_fp_(y8_fp)
         , imu_queue_(imu_queue)
         , control_(control) {}
 
@@ -119,6 +122,23 @@ public:
             total_h265_bytes_ += result.bytes;
         }
 
+        if (options_.output_y8) {
+            if (!y8_fp_) {
+                error_ = "Y8 output is not initialized";
+                return VideoFrameProcessResult::encoder_failure;
+            }
+            for (int row = 0; row < decoded.height; ++row) {
+                const size_t written = fwrite(
+                    decoded.y.data +
+                        static_cast<size_t>(row) * decoded.y.stride,
+                    1, decoded.width, y8_fp_);
+                if (written != static_cast<size_t>(decoded.width)) {
+                    error_ = "Y8 write failed";
+                    return VideoFrameProcessResult::encoder_failure;
+                }
+            }
+        }
+
         export_preview_if_requested(frame);
         ++timings_.frames;
         if (imu_overflow) {
@@ -181,6 +201,7 @@ private:
     VideoFrameProcessorOptions options_;
     MppEncoder* encoder_ = nullptr;
     FILE* h265_fp_ = nullptr;
+    FILE* y8_fp_ = nullptr;
     ImuFrameQueue* imu_queue_ = nullptr;
     VideoCaptureControl* control_ = nullptr;
     MjpegYuvDecoder decoder_;

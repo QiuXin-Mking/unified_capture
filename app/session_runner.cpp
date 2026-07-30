@@ -1,6 +1,7 @@
 #include "app/session_runner.h"
 
 #include "app/session_profile.h"
+#include "app/capture_output_policy.h"
 #include "core/barrier.h"
 #include "core/output_path.h"
 #include "hardware/as5600/encoder_sensor.h"
@@ -77,17 +78,23 @@ void SessionRunner::run(const std::string& session_dir,
     sensors_.clear();
 
     if (cameras_.profile == ProductProfile::banana) {
-        capture_control_.reset_stream_start(0, false);
+        const bool has_sixcam =
+            cameras_.sixcam.enabled &&
+            !cameras_.sixcam.jhh04_path.empty() &&
+            !cameras_.sixcam.jhh02_path.empty();
+        capture_control_.reset_stream_start(
+            static_cast<int>(active_profile_cameras(cameras_).size()),
+            has_sixcam);
 
         // ── 1. 六目模块 (先四目→后双目, 硬件内部已同步) ──
         if (cameras_.sixcam.enabled && !cameras_.sixcam.jhh04_path.empty() &&
             !cameras_.sixcam.jhh02_path.empty()) {
             CameraConfig jhh04{
                 "jhh04", kSixVid, kSixPid, 0, 3104, 480, 30, 4000000, 30, true,
-                ImuOrientation::HORIZONTAL_TOP, false, true};
+                ImuOrientation::VERTICAL_LEFT, false, false};
             CameraConfig jhh02{
-                "jhh02", kJhh2Vid, kJhh2Pid, 2, 2560, 720, 30, 8000000, 15, true,
-                ImuOrientation::HORIZONTAL_TOP, false, true};
+                "jhh02", kJhh2Vid, kJhh2Pid, 2, 4000, 1200, 30, 16000000, 30, true,
+                ImuOrientation::HORIZONTAL_TOP, true, false};
             auto sixcam = std::make_unique<SixCamSensor>(
                 jhh04, jhh02, cameras_.sixcam.jhh04_path, cameras_.sixcam.jhh02_path,
                 session_dir, session_number, session_timestamp, session_running_,
@@ -98,7 +105,7 @@ void SessionRunner::run(const std::string& session_dir,
                 sensors_.push_back(std::make_unique<ImuSensor>(
                     "jhh04", session_dir, sixcam_ptr->imu_queue_jhh04(),
                     session_number, session_timestamp,
-                    ImuOrientation::HORIZONTAL_TOP, session_running_));
+                    ImuOrientation::VERTICAL_LEFT, session_running_));
                 sensors_.push_back(std::make_unique<ImuSensor>(
                     "jhh02", session_dir, sixcam_ptr->imu_queue_jhh02(),
                     session_number, session_timestamp,
@@ -109,8 +116,10 @@ void SessionRunner::run(const std::string& session_dir,
         // ── 2. 腕部相机 (六目启流完成后) ──
         for (const CameraSlot& camera : active_profile_cameras(cameras_)) {
             CameraConfig config = camera.config;
-            config.output_h265 = true;
-            config.output_y8 = false;
+            const CameraOutputPolicy policy =
+                banana_camera_output_policy(config.name);
+            config.output_h265 = policy.output_h265;
+            config.output_y8 = policy.output_y8;
             auto video = std::make_unique<VideoSensor>(
                 config, session_dir, camera.device_path,
                 session_number, session_timestamp, session_running_, capture_control_);
@@ -158,10 +167,10 @@ void SessionRunner::run(const std::string& session_dir,
             !cameras_.sixcam.jhh02_path.empty()) {
             CameraConfig jhh04{
                 "jhh04", kSixVid, kSixPid, 0, 3104, 480, 30, 4000000, 30, true,
-                ImuOrientation::HORIZONTAL_TOP, false, true};
+                ImuOrientation::VERTICAL_LEFT, false, false};
             CameraConfig jhh02{
-                "jhh02", kJhh2Vid, kJhh2Pid, 2, 2560, 720, 30, 8000000, 15, true,
-                ImuOrientation::HORIZONTAL_TOP, false, true};
+                "jhh02", kJhh2Vid, kJhh2Pid, 2, 4000, 1200, 30, 16000000, 30, true,
+                ImuOrientation::HORIZONTAL_TOP, options_.use_h265, false};
             auto sixcam = std::make_unique<SixCamSensor>(
                 jhh04, jhh02, cameras_.sixcam.jhh04_path, cameras_.sixcam.jhh02_path,
                 session_dir, session_number, session_timestamp, session_running_,
@@ -172,7 +181,7 @@ void SessionRunner::run(const std::string& session_dir,
                 sensors_.push_back(std::make_unique<ImuSensor>(
                     "jhh04", session_dir, sixcam_ptr->imu_queue_jhh04(),
                     session_number, session_timestamp,
-                    ImuOrientation::HORIZONTAL_TOP, session_running_));
+                    ImuOrientation::VERTICAL_LEFT, session_running_));
                 sensors_.push_back(std::make_unique<ImuSensor>(
                     "jhh02", session_dir, sixcam_ptr->imu_queue_jhh02(),
                     session_number, session_timestamp,
