@@ -5,6 +5,7 @@
 
 #include "hardware/common/sensor.h"
 #include "hardware/imu/imu_decode.h"
+#include "hardware/imu/imu_frame_queue.h"
 #include "core/frame_queue.h"
 #include "core/camera_config.h"
 
@@ -22,7 +23,22 @@ public:
         : Sensor(camera_name + "_imu", running)
         , camera_name_(camera_name)
         , session_dir_(session_dir)
-        , queue_(queue)
+        , legacy_queue_(&queue)
+        , session_num_(session_num)
+        , session_ts_(session_ts)
+        , orientation_(orientation) {}
+
+    ImuSensor(const std::string& camera_name,
+              const std::string& session_dir,
+              ImuFrameQueue& queue,
+              int session_num,
+              const std::string& session_ts,
+              ImuOrientation orientation,
+              std::atomic<bool>& running)
+        : Sensor(camera_name + "_imu", running)
+        , camera_name_(camera_name)
+        , session_dir_(session_dir)
+        , compact_queue_(&queue)
         , session_num_(session_num)
         , session_ts_(session_ts)
         , orientation_(orientation) {}
@@ -39,9 +55,21 @@ protected:
         uint64_t total_frames = 0;
         uint64_t imu_frames = 0;
         uint64_t total_bytes = 0;
-        while (running_ || !queue_.empty()) {
+        if (compact_queue_) {
+            ImuFrame frame;
+            while (compact_queue_->wait_pop(frame)) {
+                total_frames++;
+                if (fp_ && frame.size >= IMU_GROUP) {
+                    imu_parse_and_write(
+                        frame.data.data(), frame.size, frame.frame_idx, fp_);
+                    imu_frames++;
+                    total_bytes += frame.size;
+                }
+            }
+        }
+        while (legacy_queue_ && (running_ || !legacy_queue_->empty())) {
             BGRFrame frame;
-            if (queue_.try_pop(frame)) {
+            if (legacy_queue_->try_pop(frame)) {
                 total_frames++;
                 if (fp_ && !frame.data.empty()) {
                     uint8_t imu_buf[256] = {};
@@ -78,7 +106,8 @@ protected:
 private:
     std::string camera_name_;
     std::string session_dir_;
-    FrameQueue& queue_;
+    FrameQueue* legacy_queue_ = nullptr;
+    ImuFrameQueue* compact_queue_ = nullptr;
     int session_num_;
     std::string session_ts_;
     ImuOrientation orientation_;

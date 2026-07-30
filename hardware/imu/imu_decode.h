@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <array>
 
 // ---- 常量 ----
 constexpr int IMU_VAL0   = 50;
@@ -176,6 +177,104 @@ static uint32_t imu_read_frame_vertical(const uint8_t* bgr, int w, int h, uint8_
             if (total >= IMU_TARGET) break;
         }
         if (total >= IMU_GROUP) return total;
+    }
+    return 0;
+}
+
+// ---- 从单通道亮度行解码，避免为 IMU 构造完整 BGR 帧 ----
+static uint32_t imu_luma_line_decode(const uint8_t* row, int row_width,
+                                     uint8_t* out) {
+    if (!row || row_width < 5 ||
+        !(row[0] > IMU_VAL1 && row[1] > IMU_VAL1 &&
+          row[2] > IMU_VAL1 && row[3] > IMU_VAL1)) {
+        return 0;
+    }
+
+    uint32_t ind = 0;
+    for (; ind < static_cast<uint32_t>(row_width); ++ind) {
+        if (row[ind] < IMU_VAL1) {
+            ind += (IMU_USIZE >> 1);
+            break;
+        }
+    }
+    if (ind >= static_cast<uint32_t>(row_width)) {
+        return 0;
+    }
+
+    std::array<uint8_t, 8192> bits{};
+    uint32_t bit_count = 0;
+    for (; ind + 1 < static_cast<uint32_t>(row_width);
+         ind += IMU_USIZE) {
+        if (bit_count >= bits.size()) {
+            break;
+        }
+        const uint16_t sum =
+            static_cast<uint16_t>(row[ind]) + row[ind + 1];
+        if (sum < (IMU_VAL0 << 1)) {
+            bits[bit_count++] = 0;
+        } else if (sum < (IMU_VAL1 << 1)) {
+            bits[bit_count++] = 1;
+        } else {
+            break;
+        }
+    }
+
+    const uint32_t byte_count = bit_count / 8;
+    for (uint32_t i = 0; i < byte_count; ++i) {
+        uint8_t value = 0;
+        for (int bit = 0; bit < 8; ++bit) {
+            value |= bits[i * 8 + bit] << bit;
+        }
+        out[i] = value;
+    }
+    return byte_count;
+}
+
+static uint32_t imu_read_luma_horizontal(const uint8_t* y, int w, int h,
+                                         int stride, uint8_t* buf) {
+    if (!y || !buf || w <= 0 || h <= 0 || stride < w) {
+        return 0;
+    }
+    for (int row = 3; row < h; row += IMU_USIZE) {
+        std::array<uint8_t, 1024> line_buf{};
+        uint32_t count = imu_luma_line_decode(
+            y + static_cast<size_t>(row) * stride, w, line_buf.data());
+        if (count > 0) {
+            if (count > 256) {
+                count = 256;
+            }
+            memcpy(buf, line_buf.data(), count);
+            return count;
+        }
+    }
+    return 0;
+}
+
+static uint32_t imu_read_luma_vertical(const uint8_t* y, int w, int h,
+                                       int stride, uint8_t* buf) {
+    if (!y || !buf || w <= 0 || h <= 0 || stride < w || h > 8192) {
+        return 0;
+    }
+    const int starts[2] = {3, w - 3};
+    const int steps[2] = {IMU_USIZE, -IMU_USIZE};
+    for (int side = 0; side < 2; ++side) {
+        for (int col = starts[side]; col >= 0 && col < w;
+             col += steps[side]) {
+            std::array<uint8_t, 8192> column{};
+            for (int row = 0; row < h; ++row) {
+                column[row] = y[static_cast<size_t>(row) * stride + col];
+            }
+            std::array<uint8_t, 1024> line_buf{};
+            uint32_t count =
+                imu_luma_line_decode(column.data(), h, line_buf.data());
+            if (count > 0) {
+                if (count > 256) {
+                    count = 256;
+                }
+                memcpy(buf, line_buf.data(), count);
+                return count;
+            }
+        }
     }
     return 0;
 }
