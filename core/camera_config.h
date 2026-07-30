@@ -4,7 +4,7 @@
 
 // IMU 码带在图像中的方向
 enum class ImuOrientation {
-    HORIZONTAL_TOP,     // 码带数据沿图像行排列
+    HORIZONTAL_TOP,     // 码带数据沿图像行排列，JHH2/JHH02: 横向码带, 仅在顶部
     VERTICAL_LEFT,      // 码带数据沿图像列排列
 };
 
