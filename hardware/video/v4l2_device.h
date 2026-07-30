@@ -32,6 +32,8 @@
 #include <vector>
 #include <string>
 
+#include "hardware/video/v4l2_frame_view.h"
+
 struct V4l2Buffer {
     void*  start  = nullptr;
     size_t length = 0;
@@ -190,24 +192,51 @@ public:
         return true;
     }
 
-    // ── dequeue_frame: non-blocking DQBUF → nullptr on EAGAIN ──
-    uint8_t* dequeue_frame(size_t& len) {
+    // ── dequeue_frame: non-blocking DQBUF with driver metadata ──
+    bool dequeue_frame(V4l2FrameView& frame) {
         struct v4l2_buffer buf = {};
         buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         buf.memory = V4L2_MEMORY_MMAP;
 
         if (xioctl(VIDIOC_DQBUF, &buf) < 0) {
-            if (errno == EAGAIN) return nullptr;
+            if (errno == EAGAIN) return false;
             static int dq_errors = 0;
             if (dq_errors++ < 3) {
                 fprintf(stderr, "[v4l2] DQBUF error: %s\n", strerror(errno));
             }
-            return nullptr;
+            return false;
+        }
+        if (buf.index >= buffers_.size()) {
+            fprintf(stderr, "[v4l2] DQBUF invalid index: %u (count=%zu)\n",
+                    buf.index, buffers_.size());
+            return false;
+        }
+        if (buf.bytesused > buffers_[buf.index].length) {
+            fprintf(stderr, "[v4l2] DQBUF invalid bytesused: %u (capacity=%zu)\n",
+                    buf.bytesused, buffers_[buf.index].length);
+            dequeued_index_ = buf.index;
+            requeue_frame();
+            return false;
         }
         dequeued_index_ = buf.index;
         dequeued_len_   = buf.bytesused;
-        len = dequeued_len_;
-        return (uint8_t*)buffers_[dequeued_index_].start;
+        frame.data = static_cast<const uint8_t*>(buffers_[dequeued_index_].start);
+        frame.size = dequeued_len_;
+        frame.sequence = buf.sequence;
+        frame.timestamp_us =
+            static_cast<uint64_t>(buf.timestamp.tv_sec) * 1000000ULL +
+            static_cast<uint64_t>(buf.timestamp.tv_usec);
+        return true;
+    }
+
+    // Compatibility wrapper for existing synchronous pipelines.
+    uint8_t* dequeue_frame(size_t& len) {
+        V4l2FrameView frame;
+        if (!dequeue_frame(frame)) {
+            return nullptr;
+        }
+        len = frame.size;
+        return const_cast<uint8_t*>(frame.data);
     }
 
     // ── requeue_frame: QBUF last dequeued index ──

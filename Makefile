@@ -38,7 +38,7 @@ C_OBJECTS := $(patsubst %.c,build/obj/%.o,$(C_SOURCES))
 OBJS := $(CPP_OBJECTS) $(C_OBJECTS)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean scan test test_product_config test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_source_layout help
+.PHONY: all clean scan test test_product_config test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_source_layout help
 
 all: $(TARGET)
 
@@ -58,7 +58,7 @@ build/obj/%.o: %.c
 scan: $(TARGET)
 	./$(TARGET) --scan
 
-test: test_product_config test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_source_layout
+test: test_product_config test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_source_layout
 
 test_product_config: build/tests/test_product_config
 	./$<
@@ -128,6 +128,13 @@ test_video_pipeline_stats: build/tests/test_video_pipeline_stats
 	./$<
 
 build/tests/test_video_pipeline_stats: tests/test_video_pipeline_stats.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+test_v4l2_frame_view: build/tests/test_v4l2_frame_view
+	./$<
+
+build/tests/test_v4l2_frame_view: tests/test_v4l2_frame_view.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
 
