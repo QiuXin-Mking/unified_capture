@@ -35,29 +35,39 @@ int main() {
 
     {
         const int width = kEncodedPixels;
-        const int height = 16;
+        const int height = 12 * IMU_USIZE;
         const int stride = width + 13;
         std::vector<uint8_t> y(static_cast<size_t>(stride) * height, 0);
-        encode_line(y.data() + 3 * stride, width, payload);
+        for (int row = 3; row < height; row += IMU_USIZE) {
+            encode_line(y.data() + row * stride, width, payload);
+        }
         const uint32_t size = imu_read_luma_horizontal(
             y.data(), width, height, stride, decoded.data());
-        assert(size == payload.size());
-        assert(std::equal(payload.begin(), payload.end(), decoded.begin()));
+        assert(size == IMU_TARGET);
+        for (int group = 0; group < 12; ++group) {
+            assert(std::equal(payload.begin(), payload.end(),
+                              decoded.begin() + group * IMU_GROUP));
+        }
     }
 
     {
-        const int width = 16;
+        const int width = 12 * IMU_USIZE;
         const int height = kEncodedPixels;
         const int stride = width + 7;
         std::vector<uint8_t> y(static_cast<size_t>(stride) * height, 0);
         std::vector<uint8_t> line(height);
         encode_line(line.data(), height, payload);
-        for (int row = 0; row < height; ++row) {
-            y[static_cast<size_t>(row) * stride + 3] = line[row];
+        for (int col = 3; col < width; col += IMU_USIZE) {
+            for (int row = 0; row < height; ++row) {
+                y[static_cast<size_t>(row) * stride + col] = line[row];
+            }
         }
         const uint32_t size = imu_read_luma_vertical(
             y.data(), width, height, stride, decoded.data());
-        assert(size == payload.size());
-        assert(std::equal(payload.begin(), payload.end(), decoded.begin()));
+        assert(size == IMU_TARGET);
+        for (int group = 0; group < 12; ++group) {
+            assert(std::equal(payload.begin(), payload.end(),
+                              decoded.begin() + group * IMU_GROUP));
+        }
     }
 }

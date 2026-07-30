@@ -155,7 +155,7 @@ build/tests/test_yuv_to_nv12: tests/test_yuv_to_nv12.cpp
 test_imu_luma_decode: build/tests/test_imu_luma_decode
 	./$<
 
-build/tests/test_imu_luma_decode: tests/test_imu_luma_decode.cpp
+build/tests/test_imu_luma_decode: tests/test_imu_luma_decode.cpp hardware/imu/imu_decode.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -Wno-unused-function $(INCLUDES) -o $@ $<
 

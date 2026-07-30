@@ -235,16 +235,28 @@ static uint32_t imu_read_luma_horizontal(const uint8_t* y, int w, int h,
     if (!y || !buf || w <= 0 || h <= 0 || stride < w) {
         return 0;
     }
-    for (int row = 3; row < h; row += IMU_USIZE) {
-        std::array<uint8_t, 1024> line_buf{};
-        uint32_t count = imu_luma_line_decode(
-            y + static_cast<size_t>(row) * stride, w, line_buf.data());
-        if (count > 0) {
-            if (count > 256) {
-                count = 256;
+    const int starts[2] = {3, 3};
+    const int steps[2] = {IMU_USIZE, -IMU_USIZE};
+    for (int strategy = 0; strategy < 2; ++strategy) {
+        uint32_t total = 0;
+        for (int row = starts[strategy]; row >= 0 && row < h;
+             row += steps[strategy]) {
+            std::array<uint8_t, 1024> line_buf{};
+            uint32_t count = imu_luma_line_decode(
+                y + static_cast<size_t>(row) * stride, w, line_buf.data());
+            if (count > 0) {
+                if (total + count > 256) {
+                    count = 256 - total;
+                }
+                memcpy(buf + total, line_buf.data(), count);
+                total += count;
             }
-            memcpy(buf, line_buf.data(), count);
-            return count;
+            if (total >= IMU_TARGET) {
+                break;
+            }
+        }
+        if (total >= IMU_GROUP) {
+            return total;
         }
     }
     return 0;
@@ -255,11 +267,13 @@ static uint32_t imu_read_luma_vertical(const uint8_t* y, int w, int h,
     if (!y || !buf || w <= 0 || h <= 0 || stride < w || h > 8192) {
         return 0;
     }
-    const int starts[2] = {3, w - 3};
-    const int steps[2] = {IMU_USIZE, -IMU_USIZE};
-    for (int side = 0; side < 2; ++side) {
-        for (int col = starts[side]; col >= 0 && col < w;
-             col += steps[side]) {
+    const int starts[4] = {3, 3, w - 3, w - 3};
+    const int steps[4] = {
+        IMU_USIZE, -IMU_USIZE, -IMU_USIZE, IMU_USIZE};
+    for (int strategy = 0; strategy < 4; ++strategy) {
+        uint32_t total = 0;
+        for (int col = starts[strategy]; col >= 0 && col < w;
+             col += steps[strategy]) {
             std::array<uint8_t, 8192> column{};
             for (int row = 0; row < h; ++row) {
                 column[row] = y[static_cast<size_t>(row) * stride + col];
@@ -271,9 +285,18 @@ static uint32_t imu_read_luma_vertical(const uint8_t* y, int w, int h,
                 if (count > 256) {
                     count = 256;
                 }
-                memcpy(buf, line_buf.data(), count);
-                return count;
+                if (total + count > 256) {
+                    count = 256 - total;
+                }
+                memcpy(buf + total, line_buf.data(), count);
+                total += count;
             }
+            if (total >= IMU_TARGET) {
+                break;
+            }
+        }
+        if (total >= IMU_GROUP) {
+            return total;
         }
     }
     return 0;
