@@ -39,7 +39,7 @@ constexpr int IMU_GROUP  = 16;
 constexpr int IMU_TARGET = 272;  // 1 header + 11 acc/gyro + 5 mag = 17 × 16 bytes
 constexpr float ACC_SENS = 4000.0f / 32768.0f;
 constexpr float GYR_SENS = 1000.0f / 32768.0f;
-constexpr float MAG_SENS = 1.0f;  // 磁力计 raw LSB (芯片待确认, 需标定后替换)
+constexpr float MAG_SENS = 0.15f;  // AK09940: 0.15 μT/LSB (18-bit, 100Hz mode)
 
 // ---- 大端序解码 ----
 static inline uint32_t be_u32(const uint8_t* b, int off) {
@@ -313,8 +313,21 @@ static uint32_t imu_read_luma_vertical(const uint8_t* y, int w, int h,
     return 0;
 }
 
+// -- AK09940 磁力计: 3字节大端 18bit → int32 (移植自 SDK F_Analysis_AK09940) --
+static inline int32_t ak09940_decode_axis(const uint8_t* p) {
+    // 读 4字节大端, 其中第3字节=第2字节 (SDK 的符号扩展模式)
+    uint32_t value;
+    value  = p[2];
+    value  = p[2] + (value << 8);
+    value  = p[1] + (value << 8);
+    value  = p[0] + (value << 8);
+    return (int32_t)value;
+}
+
 // ---- 解析 IMU 数据, 写 JSONL ----
-// acc+gyro 样本后紧跟磁力计样本 (同 16B/组, off=(1+ns)*16 开始)
+// Header 编码设备类型和样本数 (SDK F_Group_0_Analysis 协议)
+//   DeviceType[0]=ICM42688, DeviceDtSize[0]=11 → 11×16B acc+gyro
+//   DeviceType[1]=AK09940,  DeviceDtSize[1]=5  → 5×16B 磁力计
 static void imu_parse_and_write(const uint8_t* buf, uint32_t len,
                                 uint64_t frame_idx, FILE* fp) {
     if (len < IMU_GROUP) return;
@@ -332,7 +345,7 @@ static void imu_parse_and_write(const uint8_t* buf, uint32_t len,
     uint64_t es = be_u32(hdr, 8);
     uint64_t ee = be_u32(hdr, 12);
 
-    // -- acc + gyro 样本 (前 ns 组) --
+    // -- acc + gyro 样本 (前 ns 组, ICM42688) --
     for (int i = 0; i < ns; i++) {
         int off = (1 + i) * IMU_GROUP;
         if (off + IMU_GROUP > (int)len) break;
@@ -341,7 +354,6 @@ static void imu_parse_and_write(const uint8_t* buf, uint32_t len,
         int16_t ax = be_s16(s, 4), ay = be_s16(s, 6), az = be_s16(s, 8);
         int16_t gx = be_s16(s, 10), gy = be_s16(s, 12), gz = be_s16(s, 14);
 
-        // 跳过无效样本
         if ((ax == -1 && ay == -1 && az == -1) || gx == -32768) continue;
 
         fprintf(fp,
@@ -355,19 +367,24 @@ static void imu_parse_and_write(const uint8_t* buf, uint32_t len,
                 (unsigned long long)es, (unsigned long long)ee);
     }
 
-    // -- 磁力计样本 (ns 组之后, 同 16B/组) --
+    // -- 磁力计样本 (ns 组之后, AK09940, 每 16B: t_us + 3×4B axis + temp + status) --
     int mag_off = (1 + ns) * IMU_GROUP;
     while (mag_off + IMU_GROUP <= (int)len) {
         const uint8_t* s = buf + mag_off;
         uint32_t t_us = be_u32(s, 0);
-        int16_t mx = be_s16(s, 4), my = be_s16(s, 6), mz = be_s16(s, 8);
+        int32_t mx = ak09940_decode_axis(s + 4);
+        int32_t my = ak09940_decode_axis(s + 7);
+        int32_t mz = ak09940_decode_axis(s + 10);
+        float temp_c = 30.0f - ((float)(int8_t)s[13]) / 1.7f;
 
         fprintf(fp,
                 "{\"frame_idx\":%llu,\"t_us\":%u,"
-                "\"mx_raw\":%d,\"my_raw\":%d,\"mz_raw\":%d,"
+                "\"magx_ut\":%.3f,\"magy_ut\":%.3f,\"magz_ut\":%.3f,"
+                "\"mag_temp_c\":%.1f,"
                 "\"exp_start_us\":%llu,\"exp_end_us\":%llu}\n",
                 (unsigned long long)frame_idx, t_us,
-                mx, my, mz,
+                mx * MAG_SENS, my * MAG_SENS, mz * MAG_SENS,
+                temp_c,
                 (unsigned long long)es, (unsigned long long)ee);
         mag_off += IMU_GROUP;
     }
