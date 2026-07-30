@@ -13,6 +13,7 @@
 #include <rockchip/mpp_frame.h>
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/mpp_err.h>
+#include <rockchip/rk_venc_cfg.h>
 
 struct MppPutResult {
     bool ok = false;
@@ -46,41 +47,65 @@ struct MppEncoder {
         ret = mpp_init(ctx, MPP_CTX_ENC, MPP_VIDEO_CodingHEVC);
         if (ret != MPP_OK) { fprintf(stderr, "mpp_init failed\n"); return false; }
 
-        // Prep 配置
-        MppEncPrepCfg prep;
-        memset(&prep, 0, sizeof(prep));
-        prep.change      = 0xFFFFFFFF;
-        prep.width       = w;
-        prep.height      = h;
-        prep.hor_stride  = hor_stride;
-        prep.ver_stride  = ver_stride;
-        prep.format      = MPP_FMT_YUV420SP;
-        ret = mpi->control(ctx, MPP_ENC_SET_PREP_CFG, &prep);
-        if (ret != MPP_OK) { fprintf(stderr, "MPP_ENC_SET_PREP_CFG failed\n"); return false; }
+        // Use the current key/value API.  The deprecated struct API applied
+        // every zero-initialized QP field when change=ALL, effectively forcing
+        // lossless output and defeating CBR.
+        MppEncCfg cfg = nullptr;
+        ret = mpp_enc_cfg_init(&cfg);
+        if (ret != MPP_OK || !cfg) {
+            fprintf(stderr, "mpp_enc_cfg_init failed ret=%d\n", ret);
+            return false;
+        }
+        ret = mpi->control(ctx, MPP_ENC_GET_CFG, cfg);
+        if (ret != MPP_OK) {
+            fprintf(stderr, "MPP_ENC_GET_CFG failed ret=%d\n", ret);
+            mpp_enc_cfg_deinit(cfg);
+            return false;
+        }
 
-        // RC 配置 (CBR)
-        MppEncRcCfg rc;
-        memset(&rc, 0, sizeof(rc));
-        rc.change       = 0xFFFFFFFF;
-        rc.rc_mode      = MPP_ENC_RC_MODE_CBR;
-        rc.bps_target   = bps;
-        rc.bps_max      = bps * 3 / 2;
-        rc.bps_min      = bps / 8;
-        rc.fps_in_num   = fps;
-        rc.fps_in_denorm  = 1;
-        rc.fps_out_num  = fps;
-        rc.fps_out_denorm = 1;
-        rc.gop          = gop;
-        ret = mpi->control(ctx, MPP_ENC_SET_RC_CFG, &rc);
-        if (ret != MPP_OK) { fprintf(stderr, "MPP_ENC_SET_RC_CFG failed\n"); return false; }
-
-        // Codec 配置
-        MppEncCodecCfg codec;
-        memset(&codec, 0, sizeof(codec));
-        codec.coding = MPP_VIDEO_CodingHEVC;
-        codec.h265.change = 0xFFFFFFFF;
-        ret = mpi->control(ctx, MPP_ENC_SET_CODEC_CFG, &codec);
-        if (ret != MPP_OK) { fprintf(stderr, "MPP_ENC_SET_CODEC_CFG failed\n"); return false; }
+        auto set_s32 = [&](const char* key, int value) {
+            const MPP_RET set_ret = mpp_enc_cfg_set_s32(cfg, key, value);
+            if (set_ret != MPP_OK) {
+                fprintf(stderr, "mpp_enc_cfg_set_s32(%s=%d) failed ret=%d\n",
+                        key, value, set_ret);
+            }
+            return set_ret == MPP_OK;
+        };
+        bool config_ok = true;
+        config_ok &= set_s32("codec:type", MPP_VIDEO_CodingHEVC);
+        config_ok &= set_s32("prep:width", w);
+        config_ok &= set_s32("prep:height", h);
+        config_ok &= set_s32("prep:hor_stride", hor_stride);
+        config_ok &= set_s32("prep:ver_stride", ver_stride);
+        config_ok &= set_s32("prep:format", MPP_FMT_YUV420SP);
+        config_ok &= set_s32("prep:range", MPP_FRAME_RANGE_JPEG);
+        config_ok &= set_s32("rc:mode", MPP_ENC_RC_MODE_CBR);
+        config_ok &= set_s32("rc:fps_in_flex", 0);
+        config_ok &= set_s32("rc:fps_in_num", fps);
+        config_ok &= set_s32("rc:fps_in_denorm", 1);
+        config_ok &= set_s32("rc:fps_out_flex", 0);
+        config_ok &= set_s32("rc:fps_out_num", fps);
+        config_ok &= set_s32("rc:fps_out_denorm", 1);
+        config_ok &= set_s32("rc:bps_target", bps);
+        config_ok &= set_s32("rc:bps_max", bps * 17 / 16);
+        config_ok &= set_s32("rc:bps_min", bps * 15 / 16);
+        config_ok &= set_s32("rc:gop", gop);
+        config_ok &= set_s32("rc:qp_init", -1);
+        config_ok &= set_s32("rc:qp_max", 51);
+        config_ok &= set_s32("rc:qp_min", 10);
+        config_ok &= set_s32("rc:qp_max_i", 51);
+        config_ok &= set_s32("rc:qp_min_i", 10);
+        config_ok &= set_s32("rc:qp_ip", 2);
+        if (!config_ok) {
+            mpp_enc_cfg_deinit(cfg);
+            return false;
+        }
+        ret = mpi->control(ctx, MPP_ENC_SET_CFG, cfg);
+        mpp_enc_cfg_deinit(cfg);
+        if (ret != MPP_OK) {
+            fprintf(stderr, "MPP_ENC_SET_CFG failed ret=%d\n", ret);
+            return false;
+        }
 
         // Buffer group
         ret = mpp_buffer_group_get(&buf_group, MPP_BUFFER_TYPE_DRM,
