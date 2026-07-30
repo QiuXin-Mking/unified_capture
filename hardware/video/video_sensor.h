@@ -144,7 +144,8 @@ protected:
                 "acquired_fps=%.2f processed_fps=%.2f gaps=%llu "
                 "overflows=%llu decode_failures=%llu encoder_failures=%llu "
                 "imu_overflows=%llu decode_us=%.1f imu_us=%.1f "
-                "nv12_us=%.1f encoder_us=%.1f h265_bytes=%zu\n",
+                "nv12_us=%.1f encoder_submit_us=%.1f encoder_us=%.1f "
+                "h265_bytes=%zu\n",
                 cfg_.name,
                 static_cast<unsigned long long>(stats_.acquired),
                 static_cast<unsigned long long>(stats_.processed),
@@ -155,7 +156,9 @@ protected:
                 static_cast<unsigned long long>(stats_.encoder_failures),
                 static_cast<unsigned long long>(stats_.imu_queue_overflows),
                 timing.decode_us / frames, timing.imu_us / frames,
-                timing.nv12_us / frames, timing.encoder_us / frames,
+                timing.nv12_us / frames,
+                timing.encoder_submit_us / frames,
+                timing.encoder_us / frames,
                 processor.total_h265_bytes());
     }
 

@@ -3,6 +3,7 @@
 #include "core/camera_config.h"
 #include "hardware/imu/imu_decode.h"
 #include "hardware/imu/imu_frame_queue.h"
+#include "hardware/video/async_frame_sink.h"
 #include "hardware/video/capture_control.h"
 #include "hardware/video/capture_pipeline.h"
 #include "hardware/video/mjpeg_yuv_decoder.h"
@@ -11,6 +12,8 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,6 +33,7 @@ struct VideoFrameProcessorTimings {
     uint64_t decode_us = 0;
     uint64_t imu_us = 0;
     uint64_t nv12_us = 0;
+    uint64_t encoder_submit_us = 0;
     uint64_t encoder_us = 0;
     uint64_t frames = 0;
 };
@@ -47,7 +51,17 @@ public:
         , h265_fp_(h265_fp)
         , y8_fp_(y8_fp)
         , imu_queue_(imu_queue)
-        , control_(control) {}
+        , control_(control) {
+        if (options_.output_h265 && encoder_ && h265_fp_) {
+            EncoderSink sink = [encoder, h265_fp](
+                                   const uint8_t* data, size_t) {
+                return encoder->put(data, h265_fp);
+            };
+            encoder_sink_ =
+                std::make_unique<AsyncFrameSink<EncoderSink>>(
+                    4, std::move(sink));
+        }
+    }
 
     VideoFrameProcessResult process(const CompressedFrame& frame) {
         const auto decode_start = Clock::now();
@@ -97,7 +111,7 @@ public:
         }
 
         if (options_.output_h265) {
-            if (!encoder_ || !h265_fp_) {
+            if (!encoder_sink_) {
                 error_ = "H.265 output is not initialized";
                 return VideoFrameProcessResult::encoder_failure;
             }
@@ -112,14 +126,13 @@ public:
             timings_.nv12_us += elapsed_since(nv12_start);
 
             const auto encoder_start = Clock::now();
-            const MppPutResult result =
-                encoder_->put(nv12_.data(), h265_fp_);
-            timings_.encoder_us += elapsed_since(encoder_start);
-            if (!result.ok) {
-                error_ = "MPP encode or FIFO write failed";
+            const bool submitted =
+                encoder_sink_->submit(nv12_.data(), nv12_.size());
+            timings_.encoder_submit_us += elapsed_since(encoder_start);
+            if (!submitted) {
+                error_ = "asynchronous MPP encode or FIFO write failed";
                 return VideoFrameProcessResult::encoder_failure;
             }
-            total_h265_bytes_ += result.bytes;
         }
 
         if (options_.output_y8) {
@@ -148,6 +161,13 @@ public:
     }
 
     void finish() {
+        if (encoder_sink_) {
+            encoder_sink_->finish();
+            timings_.encoder_us = encoder_sink_->processing_us();
+            if (!encoder_sink_->ok()) {
+                error_ = "asynchronous MPP encode or FIFO write failed";
+            }
+        }
         if (imu_queue_) {
             imu_queue_->close();
         }
@@ -162,11 +182,13 @@ public:
     }
 
     size_t total_h265_bytes() const {
-        return total_h265_bytes_;
+        return encoder_sink_ ? encoder_sink_->bytes() : 0;
     }
 
 private:
     using Clock = std::chrono::steady_clock;
+    using EncoderSink =
+        std::function<MppPutResult(const uint8_t*, size_t)>;
 
     static uint64_t elapsed_since(Clock::time_point start) {
         return static_cast<uint64_t>(
@@ -206,7 +228,7 @@ private:
     VideoCaptureControl* control_ = nullptr;
     MjpegYuvDecoder decoder_;
     std::vector<uint8_t> nv12_;
+    std::unique_ptr<AsyncFrameSink<EncoderSink>> encoder_sink_;
     VideoFrameProcessorTimings timings_;
-    size_t total_h265_bytes_ = 0;
     std::string error_;
 };
