@@ -7,11 +7,21 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <unistd.h>
 
 #include <rockchip/rk_mpi.h>
 #include <rockchip/mpp_frame.h>
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/mpp_err.h>
+
+struct MppPutResult {
+    bool ok = false;
+    size_t bytes = 0;
+
+    // Keeps the legacy synchronous sensors buildable until Task 6 replaces
+    // their collect loops with VideoFrameProcessor.
+    operator size_t() const { return bytes; }
+};
 
 struct MppEncoder {
     MppCtx ctx = nullptr;
@@ -81,10 +91,18 @@ struct MppEncoder {
     }
 
     // 编码一帧 NV12 → H.265 NAL, 直接写 FILE*
-    size_t put(uint8_t* nv12, FILE* fp) {
+    MppPutResult put(const uint8_t* nv12, FILE* fp) {
         std::lock_guard<std::mutex> lock(mutex_);
-        MppFrame frame;
-        mpp_frame_init(&frame);
+        if (!ctx || !mpi || !nv12 || !fp) {
+            return {};
+        }
+
+        MppFrame frame = nullptr;
+        MPP_RET ret = mpp_frame_init(&frame);
+        if (ret != MPP_OK || !frame) {
+            fprintf(stderr, "[MPP] mpp_frame_init failed ret=%d\n", ret);
+            return {};
+        }
         mpp_frame_set_width(frame, width);
         mpp_frame_set_height(frame, height);
         mpp_frame_set_hor_stride(frame, hor_stride);
@@ -93,7 +111,7 @@ struct MppEncoder {
         mpp_frame_set_eos(frame, 0);
 
         MppBuffer buf = nullptr;
-        MPP_RET ret = mpp_buffer_get(buf_group, &buf, frame_size);
+        ret = mpp_buffer_get(buf_group, &buf, frame_size);
         if (ret != MPP_OK || !buf) {
             // Buffer temporarily exhausted; wait a bit and retry once.
             usleep(5000);
@@ -102,14 +120,15 @@ struct MppEncoder {
         if (ret != MPP_OK || !buf) {
             fprintf(stderr, "[MPP] mpp_buffer_get failed ret=%d buf=%p\n", ret, (void*)buf);
             mpp_frame_deinit(&frame);
-            return 0;
+            return {};
         }
 
         void* ptr = mpp_buffer_get_ptr(buf);
         if (!ptr) {
             fprintf(stderr, "[MPP] mpp_buffer_get_ptr returned NULL\n");
+            mpp_buffer_put(buf);
             mpp_frame_deinit(&frame);
-            return 0;
+            return {};
         }
 
         memcpy(ptr, nv12, frame_size);
@@ -119,20 +138,35 @@ struct MppEncoder {
         ret = mpi->encode_put_frame(ctx, frame);
         mpp_frame_deinit(&frame);
         mpp_buffer_put(buf);
+        if (ret != MPP_OK) {
+            fprintf(stderr, "[MPP] encode_put_frame failed ret=%d\n", ret);
+            return {};
+        }
 
-        // 取编码结果 (循环清空 MPP 输出队列, 释放编码器内部 buffer)
-        size_t written = 0;
+        MppPutResult result{true, 0};
         MppPacket pkt = nullptr;
-        while (!mpi->encode_get_packet(ctx, &pkt) && pkt) {
+        ret = mpi->encode_get_packet(ctx, &pkt);
+        if (ret != MPP_OK) {
+            fprintf(stderr, "[MPP] encode_get_packet failed ret=%d\n", ret);
+            return {};
+        }
+        if (pkt) {
             size_t len = mpp_packet_get_length(pkt);
             if (len > 0) {
-                fwrite(mpp_packet_get_data(pkt), 1, len, fp);
-                written += len;
+                const size_t written =
+                    fwrite(mpp_packet_get_data(pkt), 1, len, fp);
+                if (written != len || ferror(fp)) {
+                    fprintf(stderr,
+                            "[MPP] H.265 FIFO write failed (%zu/%zu)\n",
+                            written, len);
+                    mpp_packet_deinit(&pkt);
+                    return {};
+                }
+                result.bytes = written;
             }
             mpp_packet_deinit(&pkt);
-            pkt = nullptr;
         }
-        return written;
+        return result;
     }
 
     // Flush 编码器 (发送 EOS, 排空残余帧)

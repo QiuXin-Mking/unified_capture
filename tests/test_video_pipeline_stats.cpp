@@ -26,6 +26,9 @@ int main() {
     stats.encoder_failures = 1;
     assert(!video_pipeline_valid(stats));
     stats.encoder_failures = 0;
+    stats.imu_queue_overflows = 1;
+    assert(!video_pipeline_valid(stats));
+    stats.imu_queue_overflows = 0;
     assert(video_pipeline_valid(stats));
 
     V4l2SequenceTracker tracker;
