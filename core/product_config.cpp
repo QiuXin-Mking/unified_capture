@@ -1,7 +1,11 @@
 #include "core/product_config.h"
 
+#include <charconv>
+#include <cstdint>
 #include <fstream>
+#include <limits>
 #include <map>
+#include <string_view>
 
 namespace {
 
@@ -52,6 +56,8 @@ ProductConfigResult load_product_profile(const std::string& path,
             *profile = ProductProfile::mango;
         } else if (value == "banana") {
             *profile = ProductProfile::banana;
+        } else if (value == "cherry") {
+            *profile = ProductProfile::cherry;
         } else {
             return error_result("unknown product: " + value);
         }
@@ -128,6 +134,170 @@ ProductConfigResult required_value(const SectionEntries& entries,
     return ProductConfigResult{};
 }
 
+ProductConfigResult parse_hex_u16(const std::string& value, uint16_t* parsed) {
+    if (value.size() <= 2 || value[0] != '0' || value[1] != 'x') {
+        return error_result("expected hexadecimal value with 0x prefix");
+    }
+
+    unsigned int number = 0;
+    const char* begin = value.data() + 2;
+    const char* end = value.data() + value.size();
+    const auto [next, error] = std::from_chars(begin, end, number, 16);
+    if (error != std::errc{} || next != end ||
+        number > std::numeric_limits<uint16_t>::max()) {
+        return error_result("invalid 16-bit hexadecimal value");
+    }
+    *parsed = static_cast<uint16_t>(number);
+    return ProductConfigResult{};
+}
+
+ProductConfigResult parse_decimal_int(const std::string& value, int* parsed) {
+    if (value.empty()) {
+        return error_result("invalid decimal value");
+    }
+    for (const char character : value) {
+        if (character < '0' || character > '9') {
+            return error_result("invalid decimal value");
+        }
+    }
+
+    int number = 0;
+    const char* begin = value.data();
+    const char* end = value.data() + value.size();
+    const auto [next, error] = std::from_chars(begin, end, number, 10);
+    if (error != std::errc{} || next != end) {
+        return error_result("decimal value is out of range");
+    }
+    *parsed = number;
+    return ProductConfigResult{};
+}
+
+ProductConfigResult parse_cherry_resolution(const std::string& value,
+                                             int* width,
+                                             int* height) {
+    const std::size_t separator = value.find('x');
+    if (separator == std::string::npos ||
+        value.find('x', separator + 1) != std::string::npos) {
+        return error_result("stereo.resolution must be WIDTHxHEIGHT");
+    }
+
+    ProductConfigResult result = parse_decimal_int(value.substr(0, separator), width);
+    if (!result.error.empty()) {
+        return result;
+    }
+    result = parse_decimal_int(value.substr(separator + 1), height);
+    if (!result.error.empty()) {
+        return result;
+    }
+    if (*width != 3200 || *height != 1200) {
+        return error_result("cherry stereo.resolution must be 3200x1200");
+    }
+    return ProductConfigResult{};
+}
+
+ProductConfigResult validate_cherry_keys(const SectionEntries& entries) {
+    static const std::map<std::string, bool> allowed_keys = {
+        {"stereo.vid", true},
+        {"stereo.pid", true},
+        {"stereo.resolution", true},
+        {"stereo.format", true},
+        {"stereo.fps", true},
+        {"allow_missing_devices", true},
+        {"wrist_left.product", true},
+        {"wrist_right.product", true},
+    };
+    for (const auto& [key, _] : entries) {
+        if (!allowed_keys.contains(key)) {
+            return error_result("unknown cherry camera-map key: " + key);
+        }
+    }
+    return ProductConfigResult{};
+}
+
+ProductConfigResult load_cherry_configuration(const SectionEntries& entries,
+                                              CherryDeviceMap* cherry) {
+    ProductConfigResult result = validate_cherry_keys(entries);
+    if (!result.error.empty()) {
+        return result;
+    }
+
+    std::string value;
+    result = required_value(entries, "stereo.vid", &value);
+    if (!result.error.empty()) {
+        return result;
+    }
+    result = parse_hex_u16(value, &cherry->vid);
+    if (!result.error.empty()) {
+        return result;
+    }
+    if (cherry->vid != 0x5268) {
+        return error_result("cherry stereo.vid must be 0x5268");
+    }
+
+    result = required_value(entries, "stereo.pid", &value);
+    if (!result.error.empty()) {
+        return result;
+    }
+    result = parse_hex_u16(value, &cherry->pid);
+    if (!result.error.empty()) {
+        return result;
+    }
+    if (cherry->pid != 0x1218) {
+        return error_result("cherry stereo.pid must be 0x1218");
+    }
+
+    result = required_value(entries, "stereo.resolution", &value);
+    if (!result.error.empty()) {
+        return result;
+    }
+    result = parse_cherry_resolution(value, &cherry->width, &cherry->height);
+    if (!result.error.empty()) {
+        return result;
+    }
+
+    result = required_value(entries, "stereo.format", &cherry->format);
+    if (!result.error.empty()) {
+        return result;
+    }
+    if (cherry->format != "H264") {
+        return error_result("cherry stereo.format must be H264");
+    }
+
+    result = required_value(entries, "stereo.fps", &value);
+    if (!result.error.empty()) {
+        return result;
+    }
+    result = parse_decimal_int(value, &cherry->fps);
+    if (!result.error.empty()) {
+        return result;
+    }
+    if (cherry->fps != 30) {
+        return error_result("cherry stereo.fps must be 30");
+    }
+
+    result = required_value(entries, "allow_missing_devices", &value);
+    if (!result.error.empty()) {
+        return result;
+    }
+    if (value == "true") {
+        cherry->allow_missing_devices = true;
+    } else if (value == "false") {
+        cherry->allow_missing_devices = false;
+    } else {
+        return error_result("allow_missing_devices must be true or false");
+    }
+
+    const auto left = entries.find("wrist_left.product");
+    if (left != entries.end()) {
+        cherry->wrist_left_product = left->second;
+    }
+    const auto right = entries.find("wrist_right.product");
+    if (right != entries.end()) {
+        cherry->wrist_right_product = right->second;
+    }
+    return ProductConfigResult{};
+}
+
 }  // namespace
 
 std::string_view product_profile_name(ProductProfile profile) {
@@ -136,6 +306,8 @@ std::string_view product_profile_name(ProductProfile profile) {
             return "mango";
         case ProductProfile::banana:
             return "banana";
+        case ProductProfile::cherry:
+            return "cherry";
     }
     return "";
 }
@@ -196,6 +368,15 @@ ProductConfigResult load_product_configuration(
             } else if (sixcam->second != "false") {
                 return error_result("sixcam.enabled must be true or false");
             }
+        }
+    } else if (profile == ProductProfile::cherry) {
+        const auto cherry = map.find("cherry");
+        if (cherry == map.end()) {
+            return error_result("missing camera-map section: cherry");
+        }
+        result = load_cherry_configuration(cherry->second, &configuration.cherry);
+        if (!result.error.empty()) {
+            return result;
         }
     }
 

@@ -41,6 +41,7 @@ int main() {
     assert(parsed.configuration->wrist.allow_missing_devices);
     assert(parsed.configuration->wrist.left_product == "SL");
     assert(parsed.configuration->wrist.right_product == "JHHSW");
+    assert(product_profile_name(ProductProfile::cherry) == "cherry");
 
     {
         std::ofstream output(product_config);
