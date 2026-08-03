@@ -7,6 +7,11 @@
 #include <string>
 
 int main() {
+    const ProductConfigResult shipped_default = load_product_configuration(
+        "deploy/product.conf.example", "deploy/camera-map.conf.example");
+    assert(shipped_default.configuration.has_value());
+    assert(shipped_default.configuration->profile == ProductProfile::banana);
+
     const auto directory = std::filesystem::temp_directory_path() /
                            ("unified_capture_product_config_" +
                             std::to_string(std::chrono::steady_clock::now()

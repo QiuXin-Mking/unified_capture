@@ -63,7 +63,7 @@ test: test_product_config test_cherry_product_config test_wrist_discovery test_s
 test_product_config: build/tests/test_product_config
 	./$<
 
-build/tests/test_product_config: tests/test_product_config.cpp core/product_config.cpp core/product_config.h
+build/tests/test_product_config: tests/test_product_config.cpp core/product_config.cpp core/product_config.h deploy/product.conf.example deploy/camera-map.conf.example
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_product_config.cpp core/product_config.cpp
 

@@ -1,1 +1,2 @@
-product=cherry
+# Default profile. To use Cherry, change this to: product=cherry
+product=banana
