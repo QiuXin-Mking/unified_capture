@@ -23,6 +23,19 @@ const char* json_bool(bool value) {
 
 }  // namespace
 
+CaptureSensorStatus capture_sensor_status(ProductProfile profile,
+                                          bool requested_imu,
+                                          bool requested_as5600,
+                                          bool detected_vive) {
+    if (profile == ProductProfile::cherry) {
+        return {true, false, false};
+    }
+    if (profile == ProductProfile::banana) {
+        return {requested_imu, false, false};
+    }
+    return {requested_imu, requested_as5600, detected_vive};
+}
+
 std::string make_capture_status_json(const CaptureStatusResponse& status) {
     std::string json = "{\"ok\":true,\"product\":";
     append_escaped_json_string(&json, status.product);

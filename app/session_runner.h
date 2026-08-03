@@ -17,6 +17,7 @@ struct SessionOptions {
 };
 
 class Sensor;
+class CherryStartControl;
 using ControlPump = std::function<void(int timeout_ms)>;
 
 class SessionRunner {
@@ -39,5 +40,6 @@ private:
     SessionOptions options_;
     std::atomic<bool>& session_running_;
     VideoCaptureControl capture_control_;
+    std::unique_ptr<CherryStartControl> cherry_start_control_;
     std::vector<std::unique_ptr<Sensor>> sensors_;
 };

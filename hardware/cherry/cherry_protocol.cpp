@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
+#include <cstring>
 
 namespace cherry {
 namespace {
@@ -43,12 +43,18 @@ uint64_t read_le64(const uint8_t* bytes)
 
 int16_t read_le_i16(const uint8_t* bytes)
 {
-    return std::bit_cast<int16_t>(read_le16(bytes));
+    const uint16_t raw = read_le16(bytes);
+    int16_t value = 0;
+    std::memcpy(&value, &raw, sizeof(value));
+    return value;
 }
 
 int32_t read_le_i32(const uint8_t* bytes)
 {
-    return std::bit_cast<int32_t>(read_le32(bytes));
+    const uint32_t raw = read_le32(bytes);
+    int32_t value = 0;
+    std::memcpy(&value, &raw, sizeof(value));
+    return value;
 }
 
 void append_le16(std::vector<uint8_t>& bytes, uint16_t value)

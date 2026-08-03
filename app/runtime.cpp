@@ -1,6 +1,7 @@
 #include "app/runtime.h"
 
 #include "app/gpio_control.h"
+#include "app/capture_output_policy.h"
 #include "app/session_runner.h"
 #include "app/socket_server.h"
 #include "app/status_response.h"
@@ -22,6 +23,10 @@ namespace {
 std::vector<std::pair<std::string, bool>> status_cameras(
     const CameraDiscoveryResult& cameras) {
     std::vector<std::pair<std::string, bool>> result;
+    if (cameras.profile == ProductProfile::cherry) {
+        result.emplace_back("cherry_stereo", cameras.cherry.stereo.enabled);
+        return result;
+    }
     if (cameras.profile == ProductProfile::banana) {
         result.emplace_back("wrist_left", cameras.wrist[0].enabled);
         result.emplace_back("wrist_right", cameras.wrist[1].enabled);
@@ -88,8 +93,11 @@ int Runtime::run() {
     }
     const ProductConfiguration configuration = *configuration_result.configuration;
     const bool is_banana = configuration.profile == ProductProfile::banana;
-    if (is_banana && !options_.use_h265) {
-        fprintf(stderr, "ERROR: banana requires H.265 output\n");
+    const bool is_cherry = configuration.profile == ProductProfile::cherry;
+    const std::string video_option_error = profile_video_option_error(
+        configuration.profile, options_.use_h265);
+    if (!video_option_error.empty()) {
+        fprintf(stderr, "ERROR: %s\n", video_option_error.c_str());
         return 2;
     }
 
@@ -114,9 +122,20 @@ int Runtime::run() {
     }
 
     CameraDiscoveryResult cameras = discover_cameras(configuration);
-    if (!is_banana && cameras.active_count <= 0) {
+    if (is_cherry &&
+        (!cameras.cherry.stereo.enabled ||
+         cameras.cherry.stereo.device_path.empty() ||
+         cameras.cherry.serial_path.empty())) {
+        fprintf(stderr,
+                "ERROR: cherry requires one paired H.264 video and serial device\n");
+        for (const std::string& error : cameras.camera_errors) {
+            fprintf(stderr, "  %s\n", error.c_str());
+        }
+        return 1;
+    }
+    if (!is_banana && !is_cherry && cameras.active_count <= 0) {
         fprintf(stderr, "ERROR: No cameras\n");
-                return 1;
+        return 1;
     }
     if (is_banana && !configuration.wrist.allow_missing_devices) {
         int expected = static_cast<int>(cameras.wrist.size());
@@ -142,7 +161,9 @@ int Runtime::run() {
     }
 
     bool use_vive = false;
-    if (is_banana) {
+    if (is_cherry) {
+        printf("[vive] cherry profile, VIVE disabled\n");
+    } else if (is_banana) {
         printf("[vive] banana profile, VIVE disabled\n");
     } else {
         int vive_count = detect_vive_trackers();
@@ -154,10 +175,12 @@ int Runtime::run() {
         }
     }
 
-    const bool use_as5600 = is_banana ? false : options_.use_as5600;
+    const CaptureSensorStatus sensor_status = capture_sensor_status(
+        configuration.profile, options_.use_imu, options_.use_as5600, use_vive);
 
     SessionOptions session_options{
-        options_.use_imu, use_as5600, use_vive, options_.use_h265};
+        sensor_status.imu, sensor_status.as5600, sensor_status.vive,
+        options_.use_h265};
     SessionRunner sessions(cameras, session_options, session_running_);
 
     bool ready = true;
@@ -230,9 +253,9 @@ int Runtime::run() {
                 current_elapsed_ms(session_running_),
                 status_cameras(cameras),
                 cameras.camera_errors,
-                options_.use_imu,
-                use_as5600,
-                use_vive};
+                sensor_status.imu,
+                sensor_status.as5600,
+                sensor_status.vive};
             return make_capture_status_json(status);
         }
 

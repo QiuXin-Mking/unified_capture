@@ -1,8 +1,26 @@
 #include "app/capture_output_policy.h"
 
 #include <cassert>
+#include <string>
 
 int main() {
+    assert(camera_pipeline_for_profile(ProductProfile::cherry) ==
+           CameraPipeline::cherry_h264_remux);
+    assert(camera_pipeline_for_profile(ProductProfile::mango) ==
+           CameraPipeline::legacy_mpp);
+    assert(camera_pipeline_for_profile(ProductProfile::banana) ==
+           CameraPipeline::legacy_mpp);
+
+    assert(profile_video_option_error(ProductProfile::cherry, true).empty());
+    const std::string cherry_error =
+        profile_video_option_error(ProductProfile::cherry, false);
+    assert(cherry_error.find("H.264") != std::string::npos);
+    assert(cherry_error.find("mandatory") != std::string::npos);
+    assert(cherry_error.find("--no-h265") != std::string::npos);
+    assert(profile_video_option_error(ProductProfile::banana, false).find(
+               "H.265") != std::string::npos);
+    assert(profile_video_option_error(ProductProfile::mango, false).empty());
+
     const CameraOutputPolicy left = banana_camera_output_policy("wrist_left");
     assert(left.output_h265);
     assert(!left.output_y8);

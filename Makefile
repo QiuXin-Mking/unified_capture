@@ -30,7 +30,10 @@ CPP_SOURCES := app/main.cpp app/runtime.cpp app/status_response.cpp app/socket_s
 	app/gpio_control.cpp app/session_runner.cpp \
 	app/session_profile.cpp \
 	core/product_config.cpp hardware/common/sensor.cpp \
-	hardware/cherry/cherry_discovery.cpp \
+	hardware/cherry/cherry_discovery.cpp hardware/cherry/cherry_protocol.cpp \
+	hardware/cherry/cherry_h264_writer.cpp \
+	hardware/cherry/cherry_serial_sensor.cpp \
+	hardware/cherry/cherry_video_sensor.cpp \
 	hardware/video/device_discovery.cpp \
 	hardware/wrist/wrist_profile.cpp hardware/wrist/wrist_discovery.cpp
 C_SOURCES := hardware/as5600/as5600.c

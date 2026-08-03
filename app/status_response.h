@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/product_config.h"
+
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,4 +19,14 @@ struct CaptureStatusResponse {
     bool vive = false;
 };
 
+struct CaptureSensorStatus {
+    bool imu = false;
+    bool as5600 = false;
+    bool vive = false;
+};
+
 std::string make_capture_status_json(const CaptureStatusResponse& status);
+CaptureSensorStatus capture_sensor_status(ProductProfile profile,
+                                          bool requested_imu,
+                                          bool requested_as5600,
+                                          bool detected_vive);

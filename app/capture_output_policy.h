@@ -1,6 +1,34 @@
 #pragma once
 
+#include "core/product_config.h"
+
+#include <string>
 #include <string_view>
+
+enum class CameraPipeline {
+    legacy_mpp,
+    cherry_h264_remux,
+};
+
+inline CameraPipeline camera_pipeline_for_profile(ProductProfile profile) {
+    return profile == ProductProfile::cherry
+               ? CameraPipeline::cherry_h264_remux
+               : CameraPipeline::legacy_mpp;
+}
+
+inline std::string profile_video_option_error(ProductProfile profile,
+                                              bool use_h265) {
+    if (use_h265) {
+        return {};
+    }
+    if (profile == ProductProfile::cherry) {
+        return "cherry H.264 video is mandatory; --no-h265 is unsupported";
+    }
+    if (profile == ProductProfile::banana) {
+        return "banana requires H.265 output";
+    }
+    return {};
+}
 
 struct CameraOutputPolicy {
     bool output_h265 = false;

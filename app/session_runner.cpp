@@ -5,6 +5,8 @@
 #include "core/barrier.h"
 #include "core/output_path.h"
 #include "hardware/as5600/encoder_sensor.h"
+#include "hardware/cherry/cherry_serial_sensor.h"
+#include "hardware/cherry/cherry_video_sensor.h"
 #include "hardware/common/sensor.h"
 #include "hardware/imu/imu_sensor.h"
 #include "hardware/tracker/vive_tracker_sensor.h"
@@ -47,14 +49,9 @@ std::string SessionRunner::make_session_dir(const std::string& prefix,
     snprintf(path, sizeof(path), "%s/session_%03d", prefix.c_str(), session_number);
     std::string session_dir(path);
     mkdir_p(path, 0755);
-    for (const CameraSlot& camera : active_profile_cameras(cameras_)) {
-        snprintf(path, sizeof(path), "%s/%s", session_dir.c_str(), camera.config.name);
-        mkdir_p(path, 0755);
-    }
-    if (cameras_.sixcam.enabled) {
-        snprintf(path, sizeof(path), "%s/jhh04", session_dir.c_str());
-        mkdir_p(path, 0755);
-        snprintf(path, sizeof(path), "%s/jhh02", session_dir.c_str());
+    for (const std::string& directory : profile_session_directories(cameras_)) {
+        snprintf(path, sizeof(path), "%s/%s", session_dir.c_str(),
+                 directory.c_str());
         mkdir_p(path, 0755);
     }
     return session_dir;
@@ -76,8 +73,28 @@ void SessionRunner::run(const std::string& session_dir,
     std::string session_timestamp = timestamp;
 
     sensors_.clear();
+    cherry_start_control_.reset();
 
-    if (cameras_.profile == ProductProfile::banana) {
+    if (camera_pipeline_for_profile(cameras_.profile) ==
+        CameraPipeline::cherry_h264_remux) {
+        const std::vector<CherrySensorRole> roles =
+            cherry_sensor_roles(cameras_);
+        if (!roles.empty()) {
+            cherry_start_control_ = std::make_unique<CherryStartControl>();
+            for (const CherrySensorRole role : roles) {
+                if (role == CherrySensorRole::serial) {
+                    sensors_.push_back(std::make_unique<CherrySerialSensor>(
+                        cameras_.cherry.serial_path, "cherry_stereo", session_dir,
+                        session_running_, *cherry_start_control_));
+                } else {
+                    sensors_.push_back(std::make_unique<CherryVideoSensor>(
+                        cameras_.cherry.stereo.config,
+                        cameras_.cherry.stereo.device_path, session_dir,
+                        session_running_, *cherry_start_control_));
+                }
+            }
+        }
+    } else if (cameras_.profile == ProductProfile::banana) {
         const bool has_sixcam =
             cameras_.sixcam.enabled &&
             !cameras_.sixcam.jhh04_path.empty() &&
@@ -239,6 +256,7 @@ void SessionRunner::wait_teardown() {
         }
     }
     sensors_.clear();
+    cherry_start_control_.reset();
 }
 
 std::string SessionRunner::cameras_json() const {
