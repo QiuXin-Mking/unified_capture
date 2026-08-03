@@ -39,6 +39,7 @@ assert_line "mkdir -p -- /root/unified_capture" "$TEST_TMP/ssh.args"
 
 assert_line "-ahvz" "$TEST_TMP/rsync.args"
 assert_line "--progress" "$TEST_TMP/rsync.args"
+assert_line "--exclude=/.git" "$TEST_TMP/rsync.args"
 assert_line "--exclude=/.git/" "$TEST_TMP/rsync.args"
 assert_line "--exclude=/.worktrees/" "$TEST_TMP/rsync.args"
 assert_line "--exclude=/build/" "$TEST_TMP/rsync.args"

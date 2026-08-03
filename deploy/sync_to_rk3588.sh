@@ -20,6 +20,7 @@ echo "Syncing $SOURCE_DIR/ to $REMOTE_HOST:$REMOTE_DIR/"
 ssh "$REMOTE_HOST" "mkdir -p -- $REMOTE_DIR"
 
 rsync -ahvz --progress \
+    --exclude='/.git' \
     --exclude='/.git/' \
     --exclude='/.worktrees/' \
     --exclude='/build/' \
