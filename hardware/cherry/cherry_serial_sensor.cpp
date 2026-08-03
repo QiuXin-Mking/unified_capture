@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <span>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 #include <utility>
@@ -43,6 +44,55 @@ bool write_imu_samples(FILE* file, const std::vector<cherry::ImuSample>& samples
 } // namespace
 
 namespace cherry {
+
+SerialReadLoop::SerialReadLoop(std::atomic<bool>& running, ReadStep read_step)
+    : running_(running), read_step_(std::move(read_step))
+{
+}
+
+SerialReadLoop::~SerialReadLoop()
+{
+    stop_and_join();
+}
+
+bool SerialReadLoop::start()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (thread_.joinable() || active_) return false;
+    stop_requested_ = false;
+    active_ = true;
+    try {
+        thread_ = std::thread([this] {
+            while (running_ && !stop_requested_) {
+                if (!read_step_(200)) {
+                    running_ = false;
+                    break;
+                }
+            }
+            {
+                std::lock_guard<std::mutex> done_lock(mutex_);
+                active_ = false;
+            }
+            stopped_.notify_all();
+        });
+    } catch (...) {
+        active_ = false;
+        return false;
+    }
+    return true;
+}
+
+void SerialReadLoop::wait_until_stopped()
+{
+    std::unique_lock<std::mutex> lock(mutex_);
+    stopped_.wait(lock, [this] { return !active_; });
+}
+
+void SerialReadLoop::stop_and_join()
+{
+    stop_requested_ = true;
+    if (thread_.joinable()) thread_.join();
+}
 
 bool write_imu_jsonl(FILE* file, const ImuFrame& frame)
 {
@@ -117,7 +167,16 @@ CherrySerialSensor::CherrySerialSensor(
     : Sensor(std::move(sensor_name), running),
       tty_path_(std::move(tty_path)),
       session_dir_(std::move(session_dir)),
-      start_control_(start_control)
+      start_control_(start_control),
+      reader_(running_, [this](int timeout_ms) {
+          const ReadResult result = read_once(timeout_ms);
+          if (result == ReadResult::failed) {
+              fprintf(stderr, "[%s] serial read failed: %s\n",
+                      name_.c_str(), strerror(errno));
+              return false;
+          }
+          return true;
+      })
 {
 }
 
@@ -131,7 +190,8 @@ void CherrySerialSensor::setup()
     }
     if (!open_outputs()) return;
 
-    fd_ = open(tty_path_.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    fd_ = open(tty_path_.c_str(),
+               O_RDWR | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
     if (fd_ < 0) {
         fail_setup("cannot open " + tty_path_ + ": " + strerror(errno));
         return;
@@ -167,6 +227,10 @@ void CherrySerialSensor::setup()
         }
     }
 
+    if (!reader_.start()) {
+        fail_setup("cannot start Cherry serial reader thread");
+        return;
+    }
     initialized_ = true;
     start_control_.mark_ready();
     fprintf(stderr, "[%s] Cherry serial START acknowledged on %s\n",
@@ -176,35 +240,20 @@ void CherrySerialSensor::setup()
 void CherrySerialSensor::collect()
 {
     if (!initialized_) return;
-    while (running_) {
-        if (read_once(200) == ReadResult::failed) {
-            fprintf(stderr, "[%s] serial read failed: %s\n", name_.c_str(),
-                    strerror(errno));
-            running_ = false;
-            break;
-        }
-    }
+    reader_.wait_until_stopped();
 }
 
 void CherrySerialSensor::teardown()
 {
+    reader_.stop_and_join();
     if (fd_ >= 0) {
-        if (!send_control(cherry::encode_stop(kStopSequence), 200)) {
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(200);
+        if (!send_control_until(cherry::encode_stop(kStopSequence), deadline)) {
             fprintf(stderr, "[%s] failed to send Cherry STOP: %s\n",
                     name_.c_str(), strerror(errno));
         }
-        const auto deadline = std::chrono::steady_clock::now() +
-                              std::chrono::milliseconds(200);
-        while (std::chrono::steady_clock::now() < deadline) {
-            const auto remaining =
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    deadline - std::chrono::steady_clock::now());
-            if (remaining.count() <= 0 ||
-                read_once(static_cast<int>(remaining.count())) !=
-                    ReadResult::ok) {
-                break;
-            }
-        }
+        drain_after_stop(deadline);
     }
     close_resources();
     fprintf(stderr,
@@ -249,9 +298,27 @@ bool CherrySerialSensor::open_outputs()
 {
     const auto open_one = [&](const char* filename, FILE** output) {
         const std::string path = output_dir_ + "/" + filename;
-        *output = fopen(path.c_str(), "wb");
-        if (!*output) {
+        const int fd = open(path.c_str(),
+                            O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+        if (fd < 0) {
             fail_setup("cannot create " + path + ": " + strerror(errno));
+            return false;
+        }
+        const int descriptor_flags = fcntl(fd, F_GETFD);
+        if (descriptor_flags < 0 ||
+            fcntl(fd, F_SETFD, descriptor_flags | FD_CLOEXEC) < 0) {
+            const int saved_errno = errno;
+            close(fd);
+            fail_setup("cannot protect " + path + " from exec: " +
+                       strerror(saved_errno));
+            return false;
+        }
+        *output = fdopen(fd, "wb");
+        if (!*output) {
+            const int saved_errno = errno;
+            close(fd);
+            fail_setup("cannot create " + path + ": " +
+                       strerror(saved_errno));
             return false;
         }
         return true;
@@ -264,12 +331,19 @@ bool CherrySerialSensor::open_outputs()
 bool CherrySerialSensor::send_control(const std::vector<uint8_t>& bytes,
                                       int timeout_ms)
 {
+    return send_control_until(
+        bytes, std::chrono::steady_clock::now() +
+                   std::chrono::milliseconds(timeout_ms));
+}
+
+bool CherrySerialSensor::send_control_until(
+    const std::vector<uint8_t>& bytes,
+    std::chrono::steady_clock::time_point deadline)
+{
     if (fd_ < 0 || bytes.empty()) {
         errno = EINVAL;
         return false;
     }
-    const auto deadline = std::chrono::steady_clock::now() +
-                          std::chrono::milliseconds(timeout_ms);
     size_t offset = 0;
     while (offset < bytes.size()) {
         const ssize_t count = write(fd_, bytes.data() + offset,
@@ -300,6 +374,43 @@ bool CherrySerialSensor::send_control(const std::vector<uint8_t>& bytes,
         }
     }
     return true;
+}
+
+void CherrySerialSensor::drain_after_stop(
+    std::chrono::steady_clock::time_point deadline)
+{
+    bool output_empty = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+#ifdef TIOCOUTQ
+        int pending_bytes = 0;
+        if (ioctl(fd_, TIOCOUTQ, &pending_bytes) < 0) {
+            fprintf(stderr, "[%s] TIOCOUTQ failed after STOP: %s\n",
+                    name_.c_str(), strerror(errno));
+            return;
+        }
+        output_empty = pending_bytes == 0;
+#else
+        output_empty = true;
+#endif
+        const auto remaining =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                deadline - std::chrono::steady_clock::now());
+        if (remaining.count() <= 0) break;
+        const int read_timeout = static_cast<int>(
+            std::min<int64_t>(remaining.count(), 20));
+        const ReadResult result = read_once(read_timeout);
+        if (result == ReadResult::failed) {
+            fprintf(stderr, "[%s] serial drain failed after STOP: %s\n",
+                    name_.c_str(), strerror(errno));
+            return;
+        }
+        if (output_empty && result == ReadResult::timeout) return;
+    }
+    if (!output_empty) {
+        fprintf(stderr,
+                "[%s] timed out waiting for Cherry STOP bytes to leave tty\n",
+                name_.c_str());
+    }
 }
 
 CherrySerialSensor::ReadResult CherrySerialSensor::read_once(

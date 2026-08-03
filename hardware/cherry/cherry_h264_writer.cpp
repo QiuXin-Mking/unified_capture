@@ -4,6 +4,35 @@
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
+#include <fcntl.h>
+
+bool configure_cherry_fifo_stream(FILE* fifo, std::string& error) {
+    error.clear();
+    if (!fifo) {
+        error = "Cherry H.264 FIFO is not open";
+        return false;
+    }
+    const int fd = fileno(fifo);
+    if (fd < 0) {
+        error = "Cherry H.264 FIFO has no file descriptor";
+        return false;
+    }
+    const int flags = fcntl(fd, F_GETFL);
+    if (flags < 0) {
+        error = "Cannot read Cherry H.264 FIFO flags: ";
+        error += strerror(errno);
+        return false;
+    }
+    if (!(flags & O_NONBLOCK)) {
+        error = "Cherry H.264 FIFO must be nonblocking";
+        return false;
+    }
+    if (setvbuf(fifo, nullptr, _IONBF, 0) != 0) {
+        error = "Cannot disable Cherry H.264 FIFO buffering";
+        return false;
+    }
+    return true;
+}
 
 CherryH264Writer::CherryH264Writer(FILE* video_file, FILE* metadata_file)
     : video_file_(video_file), metadata_file_(metadata_file) {}

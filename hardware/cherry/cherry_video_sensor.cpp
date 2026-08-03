@@ -89,6 +89,10 @@ void CherryVideoSensor::setup()
         fail_setup(start_result.error);
         return;
     }
+    if (!running_) {
+        fail_setup("session stopped while waiting for Cherry serial START");
+        return;
+    }
 
     if (!device_.open(video_path_, config_.width, config_.height,
                       config_.fps, V4L2_PIX_FMT_H264)) {
@@ -96,6 +100,10 @@ void CherryVideoSensor::setup()
         return;
     }
     if (!open_outputs()) return;
+    if (!running_) {
+        fail_setup("session stopped before Cherry video STREAMON");
+        return;
+    }
     if (!device_.start_stream()) {
         fail_setup("V4L2 H.264 STREAMON failed");
         return;
@@ -213,20 +221,23 @@ bool CherryVideoSensor::open_fifo_writer(int timeout_ms)
     const auto deadline = std::chrono::steady_clock::now() +
                           std::chrono::milliseconds(timeout_ms);
     while (std::chrono::steady_clock::now() < deadline) {
-        const int fd = open(fifo_path_.c_str(), O_WRONLY | O_NONBLOCK);
+        const int fd = open(fifo_path_.c_str(),
+                            O_WRONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd >= 0) {
-            const int flags = fcntl(fd, F_GETFL);
-            if (flags < 0 || fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0) {
-                const int saved_errno = errno;
-                close(fd);
-                errno = saved_errno;
-                return false;
-            }
             fifo_file_ = fdopen(fd, "wb");
             if (!fifo_file_) {
                 const int saved_errno = errno;
                 close(fd);
                 errno = saved_errno;
+                return false;
+            }
+            std::string configure_error;
+            if (!configure_cherry_fifo_stream(fifo_file_, configure_error)) {
+                fprintf(stderr, "[%s] %s\n", name_.c_str(),
+                        configure_error.c_str());
+                fclose(fifo_file_);
+                fifo_file_ = nullptr;
+                errno = EIO;
                 return false;
             }
             return true;

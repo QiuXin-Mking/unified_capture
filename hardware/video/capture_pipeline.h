@@ -17,6 +17,14 @@ enum class VideoFrameProcessResult {
     imu_queue_overflow,
 };
 
+template <typename CaptureSource>
+bool capture_source_fatal(const CaptureSource& source) {
+    if constexpr (requires { source.fatal_error(); }) {
+        return source.fatal_error();
+    }
+    return false;
+}
+
 inline uint64_t capture_pipeline_now_us() {
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -53,11 +61,19 @@ VideoPipelineStats run_capture_pipeline(CaptureSource& source,
     uint64_t frame_idx = 0;
     while (running) {
         if (!source.wait_for_frame(50)) {
+            if (capture_source_fatal(source)) {
+                running = false;
+                break;
+            }
             continue;
         }
 
         V4l2FrameView view;
         if (!source.dequeue_frame(view)) {
+            if (capture_source_fatal(source)) {
+                running = false;
+                break;
+            }
             continue;
         }
 
@@ -67,6 +83,7 @@ VideoPipelineStats run_capture_pipeline(CaptureSource& source,
         ++stats.acquired;
 
         if (!source.requeue_frame()) {
+            running = false;
             break;
         }
         if (!queue.try_push(std::move(frame))) {

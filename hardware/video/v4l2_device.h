@@ -57,7 +57,8 @@ public:
         , dequeued_index_(other.dequeued_index_)
         , dequeued_len_(other.dequeued_len_)
         , actual_width_(other.actual_width_)
-        , actual_height_(other.actual_height_) {
+        , actual_height_(other.actual_height_)
+        , fatal_error_(other.fatal_error_) {
         other.fd_ = -1;
     }
 
@@ -70,6 +71,7 @@ public:
             dequeued_len_ = other.dequeued_len_;
             actual_width_ = other.actual_width_;
             actual_height_ = other.actual_height_;
+            fatal_error_ = other.fatal_error_;
             other.fd_ = -1;
         }
         return *this;
@@ -78,7 +80,8 @@ public:
     // ── open: fd, S_FMT, S_PARM fps, REQBUFS mmap, QUERYBUF+mmap ──
     bool open(const std::string& path, int width, int height, int fps,
               uint32_t pixel_format = V4L2_PIX_FMT_MJPEG) {
-        fd_ = ::open(path.c_str(), O_RDWR | O_NONBLOCK);
+        fatal_error_ = false;
+        fd_ = ::open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
         if (fd_ < 0) {
             fprintf(stderr, "[v4l2] open(%s) failed: %s\n", path.c_str(), strerror(errno));
             return false;
@@ -198,12 +201,14 @@ public:
             buf.memory = V4L2_MEMORY_MMAP;
             buf.index  = i;
             if (xioctl(VIDIOC_QBUF, &buf) < 0) {
+                fatal_error_ = true;
                 fprintf(stderr, "[v4l2] QBUF[%u] failed: %s\n", i, strerror(errno));
                 return false;
             }
         }
         int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         if (xioctl(VIDIOC_STREAMON, &type) < 0) {
+            fatal_error_ = true;
             fprintf(stderr, "[v4l2] STREAMON failed: %s\n", strerror(errno));
             return false;
         }
@@ -218,6 +223,7 @@ public:
 
         if (xioctl(VIDIOC_DQBUF, &buf) < 0) {
             if (errno == EAGAIN) return false;
+            fatal_error_ = true;
             static int dq_errors = 0;
             if (dq_errors++ < 3) {
                 fprintf(stderr, "[v4l2] DQBUF error: %s\n", strerror(errno));
@@ -225,11 +231,13 @@ public:
             return false;
         }
         if (buf.index >= buffers_.size()) {
+            fatal_error_ = true;
             fprintf(stderr, "[v4l2] DQBUF invalid index: %u (count=%zu)\n",
                     buf.index, buffers_.size());
             return false;
         }
         if (buf.bytesused > buffers_[buf.index].length) {
+            fatal_error_ = true;
             fprintf(stderr, "[v4l2] DQBUF invalid bytesused: %u (capacity=%zu)\n",
                     buf.bytesused, buffers_[buf.index].length);
             dequeued_index_ = buf.index;
@@ -264,6 +272,7 @@ public:
         buf.memory = V4L2_MEMORY_MMAP;
         buf.index  = dequeued_index_;
         if (xioctl(VIDIOC_QBUF, &buf) < 0) {
+            fatal_error_ = true;
             fprintf(stderr, "[v4l2] QBUF requeue failed: %s\n", strerror(errno));
             return false;
         }
@@ -293,6 +302,7 @@ public:
 
     int actual_width()  const { return actual_width_; }
     int actual_height() const { return actual_height_; }
+    bool fatal_error() const { return fatal_error_; }
 
     // Wait until a buffer is ready (or timeout_ms expires).
     // Returns true if data is available, false on timeout/error.
@@ -300,8 +310,20 @@ public:
         struct pollfd pfd = {};
         pfd.fd = fd_;
         pfd.events = POLLIN;
-        int r = ::poll(&pfd, 1, timeout_ms);
-        return r > 0 && (pfd.revents & POLLIN);
+        int result;
+        do {
+            result = ::poll(&pfd, 1, timeout_ms);
+        } while (result < 0 && errno == EINTR);
+        if (result < 0) {
+            fatal_error_ = true;
+            return false;
+        }
+        if (result == 0) return false;
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            fatal_error_ = true;
+            return false;
+        }
+        return (pfd.revents & POLLIN) != 0;
     }
 
 private:
@@ -328,4 +350,5 @@ private:
     size_t   dequeued_len_   = 0;
     int actual_width_  = 0;
     int actual_height_ = 0;
+    bool fatal_error_ = false;
 };

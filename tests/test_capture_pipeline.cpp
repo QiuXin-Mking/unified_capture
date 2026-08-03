@@ -4,6 +4,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <future>
 #include <thread>
 #include <vector>
 
@@ -98,9 +99,76 @@ private:
     bool finished_ = false;
 };
 
+class NoopProcessor {
+public:
+    VideoFrameProcessResult process(const CompressedFrame&) {
+        return VideoFrameProcessResult::ok;
+    }
+    void finish() {}
+};
+
+class FatalWaitSource {
+public:
+    bool wait_for_frame(int) { return false; }
+    bool dequeue_frame(V4l2FrameView&) { return false; }
+    bool requeue_frame() { return true; }
+    bool fatal_error() const { return true; }
+};
+
+class FatalDequeueSource {
+public:
+    bool wait_for_frame(int) { return true; }
+    bool dequeue_frame(V4l2FrameView&) { return false; }
+    bool requeue_frame() { return true; }
+    bool fatal_error() const { return true; }
+};
+
+class RequeueFailureSource {
+public:
+    bool wait_for_frame(int) { return true; }
+    bool dequeue_frame(V4l2FrameView& view) {
+        view = {bytes_, sizeof(bytes_), 1, 2};
+        return true;
+    }
+    bool requeue_frame() { return false; }
+
+private:
+    uint8_t bytes_[2] = {0x01, 0x02};
+};
+
+template <typename Source>
+void assert_fatal_source_stops_pipeline(Source& source) {
+    std::atomic<bool> running{true};
+    NoopProcessor processor;
+    auto result = std::async(std::launch::async, [&] {
+        return run_capture_pipeline(source, running, processor, 1);
+    });
+    const bool returned = result.wait_for(std::chrono::milliseconds(200)) ==
+                          std::future_status::ready;
+    if (!returned) running = false;
+    result.get();
+    assert(returned);
+    assert(!running);
+}
+
 }  // namespace
 
 int main() {
+    {
+        FatalWaitSource source;
+        assert_fatal_source_stops_pipeline(source);
+    }
+
+    {
+        FatalDequeueSource source;
+        assert_fatal_source_stops_pipeline(source);
+    }
+
+    {
+        RequeueFailureSource source;
+        assert_fatal_source_stops_pipeline(source);
+    }
+
     {
         std::atomic<bool> running{true};
         FakeCaptureSource source(running, 3);
