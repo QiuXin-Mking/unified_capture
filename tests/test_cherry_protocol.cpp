@@ -52,6 +52,14 @@ std::vector<uint8_t> make_frame(cherry::MessageType type, uint8_t flags,
     return frame;
 }
 
+std::vector<uint8_t> make_max_imu_frame()
+{
+    std::vector<uint8_t> payload(600, 0);
+    payload[20] = 16;
+    payload[22] = 16;
+    return make_frame(cherry::MessageType::imu_data, 0, 0, std::move(payload));
+}
+
 void test_control_encoding_and_streaming_parse()
 {
     const std::vector<uint8_t> expected_start{
@@ -90,6 +98,62 @@ void test_control_encoding_and_streaming_parse()
     assert(recovered[0].sequence == 2);
     assert(recovered[0].payload.empty());
     assert(parser.error_count() == 1);
+}
+
+void test_parser_consumes_arbitrarily_large_pushes_without_dropping_frames()
+{
+    const auto max_imu_frame = make_max_imu_frame();
+    std::vector<uint8_t> combined;
+    combined.insert(combined.end(), max_imu_frame.begin(), max_imu_frame.end());
+    combined.insert(combined.end(), max_imu_frame.begin(), max_imu_frame.end());
+    combined.insert(combined.end(), max_imu_frame.begin(), max_imu_frame.end());
+
+    cherry::StreamParser parser;
+    const auto frames = parser.push(combined);
+    assert(frames.size() == 3);
+    for (const auto& frame : frames) {
+        assert(frame.type == cherry::MessageType::imu_data);
+        assert(frame.payload.size() == cherry::kMaxPayloadSize);
+    }
+    assert(parser.error_count() == 0);
+    assert(parser.retained_buffer_size() == 0);
+
+    std::vector<uint8_t> garbage(8192, 0x55);
+    const auto discarded = parser.push(garbage);
+    assert(discarded.empty());
+    assert(parser.retained_buffer_size() == 0);
+    const auto recovered = parser.push(cherry::encode_start(1, 0x07));
+    assert(recovered.size() == 1);
+    assert(recovered[0].type == cherry::MessageType::start);
+    assert(parser.retained_buffer_size() == 0);
+}
+
+void test_parser_rejects_zero_start_mask_and_zero_frame_meta_count()
+{
+    assert(cherry::encode_start(1, 0).empty());
+
+    const auto valid_stop_response = make_frame(cherry::MessageType::stop, 0x01, 2, {});
+    const auto zero_mask_start = make_frame(cherry::MessageType::start, 0, 1, {0, 0, 0, 0});
+    cherry::StreamParser start_parser;
+    std::vector<uint8_t> start_then_stop = zero_mask_start;
+    start_then_stop.insert(start_then_stop.end(), valid_stop_response.begin(), valid_stop_response.end());
+    const auto start_recovered = start_parser.push(start_then_stop);
+    assert(start_recovered.size() == 1);
+    assert(start_recovered[0].type == cherry::MessageType::stop);
+    assert(start_parser.error_count() == 1);
+
+    const std::vector<uint8_t> zero_meta_payload{0x44, 0x33, 0x22, 0x11, 0, 0, 0, 0};
+    const cherry::Frame zero_meta{cherry::MessageType::frame_meta, 0, 0, zero_meta_payload};
+    assert(!cherry::decode_frame_meta(zero_meta).has_value());
+
+    cherry::StreamParser meta_parser;
+    std::vector<uint8_t> meta_then_stop =
+        make_frame(cherry::MessageType::frame_meta, 0, 0, zero_meta_payload);
+    meta_then_stop.insert(meta_then_stop.end(), valid_stop_response.begin(), valid_stop_response.end());
+    const auto meta_recovered = meta_parser.push(meta_then_stop);
+    assert(meta_recovered.size() == 1);
+    assert(meta_recovered[0].type == cherry::MessageType::stop);
+    assert(meta_parser.error_count() == 1);
 }
 
 void test_typed_little_endian_decoders()
@@ -199,6 +263,8 @@ void test_decoders_reject_malformed_counts_and_reserved_bytes()
 int main()
 {
     test_control_encoding_and_streaming_parse();
+    test_parser_consumes_arbitrarily_large_pushes_without_dropping_frames();
+    test_parser_rejects_zero_start_mask_and_zero_frame_meta_count();
     test_typed_little_endian_decoders();
     test_decoders_reject_malformed_counts_and_reserved_bytes();
     return 0;

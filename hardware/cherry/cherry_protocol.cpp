@@ -125,7 +125,7 @@ bool valid_frame_meta_payload(std::span<const uint8_t> payload)
         return false;
     }
     const size_t count = read_le16(payload.data() + 4);
-    if (count > kMaxFrameMetaSamples ||
+    if (count == 0 || count > kMaxFrameMetaSamples ||
         payload.size() != kFrameMetaHeaderSize + count * kFrameMetaSampleSize) {
         return false;
     }
@@ -146,7 +146,8 @@ bool valid_frame_contract(MessageType type, uint8_t flags, uint16_t sequence,
 
     switch (type) {
     case MessageType::start:
-        return sequence != 0 && payload.size() == 4 && (payload[0] & ~kStreamMask) == 0 &&
+        return sequence != 0 && payload.size() == 4 && payload[0] != 0 &&
+               (payload[0] & ~kStreamMask) == 0 &&
                (payload[1] & ~kStartFlags) == 0 && payload[2] == 0 && payload[3] == 0;
     case MessageType::stop:
         return sequence != 0 && payload.empty();
@@ -178,13 +179,6 @@ std::vector<uint8_t> encode_frame(MessageType type, uint8_t flags, uint16_t sequ
     return frame;
 }
 
-void retain_bounded_suffix(std::vector<uint8_t>& buffer)
-{
-    if (buffer.size() > kMaxBufferedBytes) {
-        buffer.erase(buffer.begin(), buffer.end() - static_cast<std::ptrdiff_t>(kMaxBufferedBytes));
-    }
-}
-
 void discard_until_magic(std::vector<uint8_t>& buffer)
 {
     static constexpr std::array<uint8_t, 2> kWireMagic{0x53, 0x59};
@@ -197,6 +191,49 @@ void discard_until_magic(std::vector<uint8_t>& buffer)
         buffer.erase(buffer.begin(), buffer.end() - 1);
     } else {
         buffer.clear();
+    }
+}
+
+void parse_available_frames(std::vector<uint8_t>& buffer, size_t& error_count,
+                            std::vector<Frame>& frames)
+{
+    while (!buffer.empty()) {
+        discard_until_magic(buffer);
+        if (buffer.size() < 2 || buffer.size() < kHeaderSize) {
+            return;
+        }
+
+        const uint16_t payload_size = read_le16(buffer.data() + 7);
+        const uint8_t type = buffer[3];
+        const uint8_t flags = buffer[4];
+        const uint16_t sequence = read_le16(buffer.data() + 5);
+        if (buffer[2] != kVersion || buffer[9] != 0 || !known_type(type) ||
+            (flags & ~kResponseFlag) != 0 || payload_size > kMaxPayloadSize) {
+            ++error_count;
+            buffer.erase(buffer.begin());
+            continue;
+        }
+
+        const size_t wire_size = kHeaderSize + payload_size + kCrcSize;
+        if (buffer.size() < wire_size) {
+            return;
+        }
+        if (read_le16(buffer.data() + kHeaderSize + payload_size) !=
+            crc16(std::span<const uint8_t>(buffer.data(), kHeaderSize + payload_size))) {
+            ++error_count;
+            buffer.erase(buffer.begin());
+            continue;
+        }
+
+        const auto payload = std::span<const uint8_t>(buffer.data() + kHeaderSize, payload_size);
+        const auto message_type = static_cast<MessageType>(type);
+        if (!valid_frame_contract(message_type, flags, sequence, payload)) {
+            ++error_count;
+            buffer.erase(buffer.begin());
+            continue;
+        }
+        frames.push_back({message_type, flags, sequence, {payload.begin(), payload.end()}});
+        buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(wire_size));
     }
 }
 
@@ -278,47 +315,17 @@ std::optional<FrameMeta> decode_frame_meta(const Frame& frame)
 
 std::vector<Frame> StreamParser::push(std::span<const uint8_t> bytes)
 {
-    buffer_.insert(buffer_.end(), bytes.begin(), bytes.end());
-    retain_bounded_suffix(buffer_);
-
     std::vector<Frame> frames;
-    while (!buffer_.empty()) {
-        discard_until_magic(buffer_);
-        if (buffer_.size() < 2 || buffer_.size() < kHeaderSize) {
-            break;
+    for (uint8_t byte : bytes) {
+        if (buffer_.size() == kMaxBufferedBytes) {
+            parse_available_frames(buffer_, error_count_, frames);
+            if (buffer_.size() == kMaxBufferedBytes) {
+                ++error_count_;
+                buffer_.erase(buffer_.begin());
+            }
         }
-
-        const uint16_t payload_size = read_le16(buffer_.data() + 7);
-        const uint8_t type = buffer_[3];
-        const uint8_t flags = buffer_[4];
-        const uint16_t sequence = read_le16(buffer_.data() + 5);
-        if (buffer_[2] != kVersion || buffer_[9] != 0 || !known_type(type) ||
-            (flags & ~kResponseFlag) != 0 || payload_size > kMaxPayloadSize) {
-            ++error_count_;
-            buffer_.erase(buffer_.begin());
-            continue;
-        }
-
-        const size_t wire_size = kHeaderSize + payload_size + kCrcSize;
-        if (buffer_.size() < wire_size) {
-            break;
-        }
-        if (read_le16(buffer_.data() + kHeaderSize + payload_size) !=
-            crc16(std::span<const uint8_t>(buffer_.data(), kHeaderSize + payload_size))) {
-            ++error_count_;
-            buffer_.erase(buffer_.begin());
-            continue;
-        }
-
-        const auto payload = std::span<const uint8_t>(buffer_.data() + kHeaderSize, payload_size);
-        const auto message_type = static_cast<MessageType>(type);
-        if (!valid_frame_contract(message_type, flags, sequence, payload)) {
-            ++error_count_;
-            buffer_.erase(buffer_.begin());
-            continue;
-        }
-        frames.push_back({message_type, flags, sequence, {payload.begin(), payload.end()}});
-        buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(wire_size));
+        buffer_.push_back(byte);
+        parse_available_frames(buffer_, error_count_, frames);
     }
     return frames;
 }
@@ -326,6 +333,11 @@ std::vector<Frame> StreamParser::push(std::span<const uint8_t> bytes)
 size_t StreamParser::error_count() const
 {
     return error_count_;
+}
+
+size_t StreamParser::retained_buffer_size() const
+{
+    return buffer_.size();
 }
 
 } // namespace cherry

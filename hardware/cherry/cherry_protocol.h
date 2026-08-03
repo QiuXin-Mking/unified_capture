@@ -82,6 +82,7 @@ class StreamParser {
 public:
     std::vector<Frame> push(std::span<const uint8_t> bytes);
     size_t error_count() const;
+    size_t retained_buffer_size() const;
 
 private:
     std::vector<uint8_t> buffer_;
