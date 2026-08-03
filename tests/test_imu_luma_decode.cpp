@@ -31,11 +31,11 @@ int main() {
         0x2b, 0x01, 0x7e, 0x80, 0x55, 0xaa, 0x11, 0x22,
         0x33, 0x44, 0x66, 0x77, 0x88, 0x99, 0xbb, 0xcc,
     };
-    std::array<uint8_t, 256> decoded{};
+    std::array<uint8_t, 384> decoded{};
 
     {
         const int width = kEncodedPixels;
-        const int height = 12 * IMU_USIZE;
+        const int height = 17 * IMU_USIZE;
         const int stride = width + 13;
         std::vector<uint8_t> y(static_cast<size_t>(stride) * height, 0);
         for (int row = 3; row < height; row += IMU_USIZE) {
@@ -44,14 +44,14 @@ int main() {
         const uint32_t size = imu_read_luma_horizontal(
             y.data(), width, height, stride, decoded.data());
         assert(size == IMU_TARGET);
-        for (int group = 0; group < 12; ++group) {
+        for (int group = 0; group < 17; ++group) {
             assert(std::equal(payload.begin(), payload.end(),
                               decoded.begin() + group * IMU_GROUP));
         }
     }
 
     {
-        const int width = 12 * IMU_USIZE;
+        const int width = 17 * IMU_USIZE;
         const int height = kEncodedPixels;
         const int stride = width + 7;
         std::vector<uint8_t> y(static_cast<size_t>(stride) * height, 0);
@@ -65,7 +65,7 @@ int main() {
         const uint32_t size = imu_read_luma_vertical(
             y.data(), width, height, stride, decoded.data());
         assert(size == IMU_TARGET);
-        for (int group = 0; group < 12; ++group) {
+        for (int group = 0; group < 17; ++group) {
             assert(std::equal(payload.begin(), payload.end(),
                               decoded.begin() + group * IMU_GROUP));
         }
