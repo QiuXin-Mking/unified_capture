@@ -33,6 +33,7 @@
 #include <string>
 
 #include "hardware/video/v4l2_frame_view.h"
+#include "hardware/video/v4l2_format_validation.h"
 
 struct V4l2Buffer {
     void*  start  = nullptr;
@@ -122,14 +123,17 @@ public:
         char selected_fourcc[5];
         fourcc_string(pixel_format, requested_fourcc);
         fourcc_string(fmt.fmt.pix.pixelformat, selected_fourcc);
-        if (fmt.fmt.pix.pixelformat != pixel_format ||
-            actual_width_ != width || actual_height_ != height) {
-            fprintf(stderr,
-                    "[v4l2] format mismatch: requested %dx%d %s, "
-                    "driver selected %dx%d %s\n",
-                    width, height, requested_fourcc,
-                    actual_width_, actual_height_, selected_fourcc);
-            close();
+        if (!validate_v4l2_selected_format(
+                pixel_format, width, height,
+                fmt.fmt.pix.pixelformat, actual_width_, actual_height_,
+                [&] {
+                    fprintf(stderr,
+                            "[v4l2] format mismatch: requested %dx%d %s, "
+                            "driver selected %dx%d %s\n",
+                            width, height, requested_fourcc,
+                            actual_width_, actual_height_, selected_fourcc);
+                    close();
+                })) {
             return false;
         }
 

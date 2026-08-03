@@ -157,7 +157,8 @@ build/tests/test_video_pipeline_stats: tests/test_video_pipeline_stats.cpp
 test_v4l2_frame_view: build/tests/test_v4l2_frame_view
 	./$<
 
-build/tests/test_v4l2_frame_view: tests/test_v4l2_frame_view.cpp
+build/tests/test_v4l2_frame_view: tests/test_v4l2_frame_view.cpp \
+	hardware/video/v4l2_format_validation.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
 
