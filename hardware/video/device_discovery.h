@@ -20,11 +20,18 @@ struct SixCamDevices {
     std::string jhh02_path;
 };
 
+struct CherryDevices {
+    CameraSlot stereo;
+    std::string serial_path;
+    std::string usb_parent;
+};
+
 struct CameraDiscoveryResult {
     ProductProfile profile = ProductProfile::mango;
     std::array<CameraSlot, 2> jhh2;
     SixCamDevices sixcam;
     std::array<CameraSlot, 2> wrist;
+    CherryDevices cherry;
     bool degraded = false;
     std::vector<std::string> camera_errors;
     int active_count = 0;

@@ -1,4 +1,5 @@
 #include "hardware/video/device_discovery.h"
+#include "hardware/cherry/cherry_discovery.h"
 #include "hardware/video/v4l2_device.h"
 #include "hardware/wrist/wrist_discovery.h"
 #include "hardware/wrist/wrist_profile.h"
@@ -383,6 +384,37 @@ CameraDiscoveryResult discover_banana_cameras(
     return result;
 }
 
+// ── discover_cherry_cameras ──
+
+CameraDiscoveryResult discover_cherry_cameras(
+    const ProductConfiguration& configuration) {
+    CameraDiscoveryResult result;
+    result.profile = ProductProfile::cherry;
+    result.cherry.stereo.config = {
+        "cherry_stereo", configuration.cherry.vid, configuration.cherry.pid,
+        0, configuration.cherry.width, configuration.cherry.height,
+        configuration.cherry.fps, 0, configuration.cherry.fps, false,
+        ImuOrientation::HORIZONTAL_TOP, false, false};
+
+    const CherryDiscoveryResult cherry =
+        discover_cherry_device(configuration.cherry);
+    if (!cherry.available) {
+        result.degraded = configuration.cherry.allow_missing_devices;
+        result.camera_errors.push_back(cherry.error);
+        return result;
+    }
+
+    result.cherry.stereo.enabled = true;
+    result.cherry.stereo.device_path = cherry.video_path;
+    result.cherry.serial_path = cherry.serial_path;
+    result.cherry.usb_parent = cherry.usb_parent;
+    result.active_count = 1;
+    printf("  %-14s -> %s + %s parent=%s bus=%u H264 3200x1200@30\n",
+           "cherry_stereo", cherry.video_path.c_str(),
+           cherry.serial_path.c_str(), cherry.usb_parent.c_str(), cherry.bus);
+    return result;
+}
+
 }  // namespace
 
 // ── Public interface ──
@@ -397,6 +429,9 @@ void scan_devices() {
 }
 
 CameraDiscoveryResult discover_cameras(const ProductConfiguration& configuration) {
+    if (configuration.profile == ProductProfile::cherry) {
+        return discover_cherry_cameras(configuration);
+    }
     if (configuration.profile == ProductProfile::banana) {
         return discover_banana_cameras(configuration);
     }

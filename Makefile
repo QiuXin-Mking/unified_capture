@@ -30,6 +30,7 @@ CPP_SOURCES := app/main.cpp app/runtime.cpp app/status_response.cpp app/socket_s
 	app/gpio_control.cpp app/session_runner.cpp \
 	app/session_profile.cpp \
 	core/product_config.cpp hardware/common/sensor.cpp \
+	hardware/cherry/cherry_discovery.cpp \
 	hardware/video/device_discovery.cpp \
 	hardware/wrist/wrist_profile.cpp hardware/wrist/wrist_discovery.cpp
 C_SOURCES := hardware/as5600/as5600.c
@@ -38,7 +39,7 @@ C_OBJECTS := $(patsubst %.c,build/obj/%.o,$(C_SOURCES))
 OBJS := $(CPP_OBJECTS) $(C_OBJECTS)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean scan test test_product_config test_cherry_product_config test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_source_layout help
+.PHONY: all clean scan test test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_source_layout help
 
 all: $(TARGET)
 
@@ -58,7 +59,7 @@ build/obj/%.o: %.c
 scan: $(TARGET)
 	./$(TARGET) --scan
 
-test: test_product_config test_cherry_product_config test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_source_layout
+test: test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_source_layout
 
 test_product_config: build/tests/test_product_config
 	./$<
@@ -73,6 +74,14 @@ test_cherry_product_config: build/tests/test_cherry_product_config
 build/tests/test_cherry_product_config: tests/test_cherry_product_config.cpp core/product_config.cpp core/product_config.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_cherry_product_config.cpp core/product_config.cpp
+
+test_cherry_discovery: build/tests/test_cherry_discovery
+	./$<
+
+build/tests/test_cherry_discovery: tests/test_cherry_discovery.cpp \
+	hardware/cherry/cherry_discovery.cpp hardware/cherry/cherry_discovery.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_cherry_discovery.cpp hardware/cherry/cherry_discovery.cpp
 
 test_wrist_discovery: build/tests/test_wrist_discovery
 	./$<
