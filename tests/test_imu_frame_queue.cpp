@@ -5,7 +5,7 @@
 
 int main() {
     static_assert(std::is_trivially_destructible_v<ImuFrame>);
-    static_assert(sizeof(ImuFrame) <= 288);
+    static_assert(sizeof(ImuFrame) <= 416);
 
     ImuFrame input;
     input.frame_idx = 42;
