@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-RK3588 统一采集程序。`mango` 保持 2 路 JHH2 独立双目与六目模组；`banana` 为左、右腕部单目，输出 H.265 MKV 和异步 IMU JSONL，且不输出 Y8。目标平台为 RK3588 ARM64 板端。
+RK3588 统一采集程序。`mango` 保持 2 路 JHH2 独立双目与六目模组；`banana` 为左、右腕部单目，输出 H.265 MKV 和异步 IMU JSONL；`cherry` 为 YCTC SC233HGS 双目，直通 UVC H.264 并采集 CDC ACM IMU/MAG/FRAME_META。banana 与 cherry 均不输出 Y8。目标平台为 RK3588 ARM64 板端。
 
 SDK: **Nori Xvision v10.00.09** (替代旧 TSTC USBCam_API v1.0.0)
 
@@ -25,9 +25,9 @@ make scan
 make test
 ```
 
-生产程序的编译单元包括 `app/*.cpp`、`core/product_config.cpp`、`hardware/common/sensor.cpp`、`hardware/video/device_discovery.cpp`、`hardware/wrist/*.cpp` 和 `hardware/as5600/as5600.c`。
+生产程序的编译单元包括 `app/*.cpp`、`core/product_config.cpp`、`hardware/common/sensor.cpp`、`hardware/video/device_discovery.cpp`、`hardware/wrist/*.cpp`、`hardware/cherry/*.cpp` 和 `hardware/as5600/as5600.c`。
 
-`/etc/unified_capture/product.conf` 选择 `mango` 或 `banana`；`/etc/unified_capture/camera-map.conf` 保存可编辑的精确 Nori `iProduct` 匹配。banana 的缺失设备策略由 `allow_missing_devices` 决定。腕部麦克风能力尚未确认；不要在未另行批准前增加音频枚举、采集、封装或状态字段。
+`/etc/unified_capture/product.conf` 选择 `mango`、`banana` 或 `cherry`；`/etc/unified_capture/camera-map.conf` 保存 Nori `iProduct` 匹配和 Cherry 的严格视频参数。Cherry 通过 sysfs USB device 父路径配对 UVC 与 ttyACM，不能只按 bus number 配对。腕部麦克风和 Cherry 腕部相机能力尚未确认；不要在未另行批准前增加音频或声称腕部硬件可用。
 
 ## 架构
 
@@ -78,6 +78,8 @@ Nori Xvision SDK (MJPEG, GetFrameBuff 轮询)
 ```
 
 **色彩转换注意：** Y8 输出实际写的是 NV12 的 Y 平面（实际 JPEG 解码尺寸），不是独立提取。
+
+Cherry 不走上述 MJPEG/MPP 管线：`V4L2 H264 → FIFO → ffmpeg stream-copy remux → cherry_stereo.mkv`。`CherrySerialSensor` 先发送 START(0x07)，随后并行写入 `imu.jsonl`、`mag.jsonl` 与 `frame_meta.jsonl`。FRAME_META 依赖硬件 GPIO 同步脉冲，接线缺失时文件可能为空；不得因此放宽 MKV、IMU 或 MAG 验收。
 
 ### Runtime 与 session 状态
 
@@ -132,6 +134,8 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，每条命令以换行�
 ├── tracker_raw.jsonl           → VIVE 原始 pose
 └── tracker.jsonl               → VIVE 每设备 100 Hz 重采样 pose
 ```
+
+Cherry 输出位于 `session_001/cherry_stereo/`：`cherry_stereo.mkv`、`video_frames.jsonl`、`imu.jsonl`、`mag.jsonl`、`frame_meta.jsonl`，且没有 Y8。可用 `deploy/calc_cherry_sync.py` 对本地或 `user@host:path` session 做同步统计。
 
 ### 关键依赖（仅 RK3588 板端可用）
 

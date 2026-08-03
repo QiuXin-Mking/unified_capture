@@ -40,6 +40,16 @@ SOCK=/tmp/unified_capture.sock CASE=two \
 | `test_video_capture_control.cpp` | 视频启流顺序与预览请求控制 |
 | `test_socket_command.cpp` | Socket 文本命令解析 |
 | `test_source_layout.sh` | 源码目录与禁用旧路径检查 |
+| `test_cherry_product_config.cpp` | Cherry 严格配置解析 |
+| `test_cherry_discovery.cpp` | H.264 UVC 与 ttyACM 的 USB 父设备配对 |
+| `test_cherry_protocol.cpp` | Sensor Bridge v3 编解码与校验 |
+| `test_cherry_h264_writer.cpp` | H.264 字节直通与帧元数据 |
+| `test_cherry_start_control.cpp` | 串口 START 就绪协调 |
+| `test_cherry_json.cpp` | IMU/MAG/FRAME_META JSONL 序列化 |
+| `test_cherry_serial_lifecycle.cpp` | 串口 START/STOP 与错误生命周期 |
+| `test_cherry_process_utils.cpp` | FFmpeg 子进程监督工具 |
+| `test_calc_cherry_sync.py` | Cherry 时间戳同步统计 |
+| `test_sync_to_rk3588.sh` | 固定 `/root/unified_capture` 的安全 rsync 参数 |
 
 ### 命名约定
 
@@ -50,6 +60,15 @@ make test_<module>         # 单个测试 target
 ```
 
 `make test` 是完整的无硬件回归：它运行全部主机单元测试和 `test_source_layout`。
+
+同步并在板端执行同一套回归与生产链接：
+
+```bash
+./deploy/sync_to_rk3588.sh
+ssh root@192.168.100.200 'cd /root/unified_capture && make clean && make test && make'
+```
+
+Cherry 硬件验收应使用新的 `/media/usb0/capture/` 子目录和 `timeout --signal=INT 30s` 的 `--no-gpio --single` 会话，不启停 systemd 服务。MKV 必须由 `ffprobe` 识别为 H.264、3200×1200、约 30 fps；每个 JSONL 文件逐行解析。`frame_meta.jsonl` 为空仅在 GPIO 同步线未接时可记为硬件阻塞，IMU、MAG、MKV 和 `video_frames.jsonl` 仍必须有效。
 
 ## 系统测试
 
