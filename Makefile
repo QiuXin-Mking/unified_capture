@@ -39,7 +39,7 @@ C_OBJECTS := $(patsubst %.c,build/obj/%.o,$(C_SOURCES))
 OBJS := $(CPP_OBJECTS) $(C_OBJECTS)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean scan test test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_cherry_h264_writer test_cherry_start_control test_cherry_json test_cherry_serial_lifecycle test_source_layout help
+.PHONY: all clean scan test test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_cherry_h264_writer test_cherry_start_control test_cherry_json test_cherry_serial_lifecycle test_cherry_process_utils test_source_layout help
 
 all: $(TARGET)
 
@@ -244,6 +244,14 @@ build/tests/test_cherry_serial_lifecycle: tests/test_cherry_serial_lifecycle.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_cherry_serial_lifecycle.cpp \
 		hardware/cherry/cherry_serial_sensor.cpp hardware/cherry/cherry_protocol.cpp \
 		hardware/common/sensor.cpp
+
+test_cherry_process_utils: build/tests/test_cherry_process_utils
+	./$<
+
+build/tests/test_cherry_process_utils: tests/test_cherry_process_utils.cpp \
+	hardware/cherry/cherry_process_utils.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
 
 test_source_layout:
 	sh tests/test_source_layout.sh

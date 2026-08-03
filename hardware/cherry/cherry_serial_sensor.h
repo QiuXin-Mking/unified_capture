@@ -40,6 +40,15 @@ private:
     bool active_ = false;
 };
 
+class SerialLifecycleCoordinator {
+public:
+    bool after_ack(bool acknowledged,
+                   const std::function<bool()>& start_reader,
+                   const std::function<void()>& mark_ready) const;
+    void before_stop(const std::function<void()>& stop_reader,
+                     const std::function<void()>& send_stop) const;
+};
+
 } // namespace cherry
 
 class CherrySerialSensor : public Sensor {
@@ -77,6 +86,7 @@ private:
     std::string session_dir_;
     std::string output_dir_;
     CherryStartControl& start_control_;
+    cherry::SerialLifecycleCoordinator lifecycle_;
     cherry::SerialReadLoop reader_;
     int fd_ = -1;
     FILE* imu_file_ = nullptr;

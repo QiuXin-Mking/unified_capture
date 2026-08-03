@@ -25,6 +25,7 @@ protected:
 private:
     bool open_outputs();
     bool open_fifo_writer(int timeout_ms);
+    bool ffmpeg_accepts_input();
     void fail_setup(const std::string& error);
     void wait_for_ffmpeg();
 
@@ -41,6 +42,7 @@ private:
     VideoPipelineStats stats_;
     size_t h264_bytes_ = 0;
     std::string writer_error_;
+    int ffmpeg_fallback_fd_limit_ = 0;
     bool stream_started_ = false;
     bool initialized_ = false;
 };

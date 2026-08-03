@@ -1,10 +1,14 @@
 #include "hardware/cherry/cherry_h264_writer.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
+#include <poll.h>
+#include <unistd.h>
+#include <utility>
 
 bool configure_cherry_fifo_stream(FILE* fifo, std::string& error) {
     error.clear();
@@ -34,8 +38,10 @@ bool configure_cherry_fifo_stream(FILE* fifo, std::string& error) {
     return true;
 }
 
-CherryH264Writer::CherryH264Writer(FILE* video_file, FILE* metadata_file)
-    : video_file_(video_file), metadata_file_(metadata_file) {}
+CherryH264Writer::CherryH264Writer(FILE* video_file, FILE* metadata_file,
+                                   CherryH264WriteOptions options)
+    : video_file_(video_file), metadata_file_(metadata_file),
+      options_(std::move(options)) {}
 
 VideoFrameProcessResult CherryH264Writer::process(
     const CompressedFrame& frame) {
@@ -51,12 +57,7 @@ VideoFrameProcessResult CherryH264Writer::process(
         return VideoFrameProcessResult::encoder_failure;
     }
 
-    errno = 0;
-    const size_t video_written =
-        fwrite(frame.data.data(), 1, frame.data.size(), video_file_);
-    bytes_ += video_written;
-    if (video_written != frame.data.size()) {
-        set_file_error("Cherry H.264 write failed");
+    if (!write_video(frame)) {
         return VideoFrameProcessResult::encoder_failure;
     }
 
@@ -84,6 +85,84 @@ VideoFrameProcessResult CherryH264Writer::process(
         return VideoFrameProcessResult::encoder_failure;
     }
     return VideoFrameProcessResult::ok;
+}
+
+bool CherryH264Writer::write_video(const CompressedFrame& frame) {
+    const int fd = fileno(video_file_);
+    if (fd >= 0) {
+        const int flags = fcntl(fd, F_GETFL);
+        if (flags < 0) {
+            set_file_error("Cannot read Cherry H.264 output flags");
+            return false;
+        }
+        if (flags & O_NONBLOCK) {
+            return write_nonblocking(frame.data.data(), frame.data.size(), fd);
+        }
+    }
+
+    errno = 0;
+    const size_t video_written =
+        fwrite(frame.data.data(), 1, frame.data.size(), video_file_);
+    bytes_ += video_written;
+    if (video_written != frame.data.size()) {
+        set_file_error("Cherry H.264 write failed");
+        return false;
+    }
+    return true;
+}
+
+bool CherryH264Writer::write_nonblocking(const uint8_t* data, size_t size,
+                                         int fd) {
+    const auto deadline = std::chrono::steady_clock::now() + options_.timeout;
+    size_t offset = 0;
+    while (offset < size) {
+        if (options_.keep_running && !options_.keep_running()) {
+            error_ = "Cherry H.264 write cancelled";
+            return false;
+        }
+
+        const ssize_t count = write(fd, data + offset, size - offset);
+        if (count > 0) {
+            offset += static_cast<size_t>(count);
+            bytes_ += static_cast<size_t>(count);
+            continue;
+        }
+        if (count == 0) {
+            errno = EIO;
+            set_file_error("Cherry H.264 write made no progress");
+            return false;
+        }
+        if (errno == EINTR) continue;
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            set_file_error("Cherry H.264 write failed");
+            return false;
+        }
+
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        if (remaining.count() <= 0) {
+            error_ = "Cherry H.264 write timed out";
+            return false;
+        }
+        struct pollfd descriptor = {fd, POLLOUT, 0};
+        const int wait_ms = static_cast<int>(
+            std::min<int64_t>(remaining.count(), 20));
+        int status;
+        do {
+            status = poll(&descriptor, 1, wait_ms);
+        } while (status < 0 && errno == EINTR);
+        if (status < 0) {
+            set_file_error("Cherry H.264 poll failed");
+            return false;
+        }
+        if (status > 0 &&
+            (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+            errno = EPIPE;
+            set_file_error("Cherry H.264 FIFO closed");
+            return false;
+        }
+    }
+    return true;
 }
 
 void CherryH264Writer::finish() {

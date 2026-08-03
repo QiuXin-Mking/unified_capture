@@ -1,6 +1,7 @@
 #include "hardware/cherry/cherry_video_sensor.h"
 
 #include "hardware/cherry/cherry_h264_writer.h"
+#include "hardware/cherry/cherry_process_utils.h"
 #include "hardware/video/capture_pipeline.h"
 
 #include <algorithm>
@@ -120,7 +121,10 @@ void CherryVideoSensor::collect()
 {
     if (!initialized_) return;
 
-    CherryH264Writer writer(fifo_file_, metadata_file_);
+    CherryH264Writer writer(
+        fifo_file_, metadata_file_,
+        {std::chrono::milliseconds(500),
+         [this] { return ffmpeg_accepts_input(); }});
     StopOnWriterFailure processor(writer, running_);
     stats_ = run_capture_pipeline(device_, running_, processor, 12);
     h264_bytes_ = writer.bytes();
@@ -188,12 +192,14 @@ bool CherryVideoSensor::open_outputs()
 
     const std::string output_path = output_dir_ + "/cherry_stereo.mkv";
     const std::string fps = std::to_string(config_.fps);
+    ffmpeg_fallback_fd_limit_ = cherry_inherited_fd_limit();
     ffmpeg_pid_ = fork();
     if (ffmpeg_pid_ < 0) {
         fail_setup("cannot fork ffmpeg: " + std::string(strerror(errno)));
         return false;
     }
     if (ffmpeg_pid_ == 0) {
+        close_cherry_inherited_fds(3, ffmpeg_fallback_fd_limit_);
         execlp("ffmpeg", "ffmpeg", "-y", "-hide_banner", "-loglevel",
                "error", "-f", "h264", "-r", fps.c_str(), "-i",
                fifo_path_.c_str(), "-c", "copy", output_path.c_str(),
@@ -207,13 +213,34 @@ bool CherryVideoSensor::open_outputs()
     }
 
     const std::string metadata_path = output_dir_ + "/video_frames.jsonl";
-    metadata_file_ = fopen(metadata_path.c_str(), "wb");
+    std::string metadata_error;
+    metadata_file_ =
+        open_cherry_cloexec_output(metadata_path, metadata_error);
     if (!metadata_file_) {
-        fail_setup("cannot create " + metadata_path + ": " +
-                   strerror(errno));
+        fail_setup(metadata_error);
         return false;
     }
     return true;
+}
+
+bool CherryVideoSensor::ffmpeg_accepts_input()
+{
+    if (!running_ || ffmpeg_pid_ <= 0) return false;
+    int status = 0;
+    const pid_t result = waitpid(ffmpeg_pid_, &status, WNOHANG);
+    if (result == 0 || (result < 0 && errno == EINTR)) return true;
+    if (result == ffmpeg_pid_) {
+        fprintf(stderr, "[%s] ffmpeg exited while capturing (%d)\n",
+                name_.c_str(),
+                WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        ffmpeg_pid_ = 0;
+        return false;
+    }
+    if (result < 0) {
+        fprintf(stderr, "[%s] waitpid(ffmpeg) failed while capturing: %s\n",
+                name_.c_str(), strerror(errno));
+    }
+    return false;
 }
 
 bool CherryVideoSensor::open_fifo_writer(int timeout_ms)

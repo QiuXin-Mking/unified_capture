@@ -94,6 +94,23 @@ void SerialReadLoop::stop_and_join()
     if (thread_.joinable()) thread_.join();
 }
 
+bool SerialLifecycleCoordinator::after_ack(
+    bool acknowledged, const std::function<bool()>& start_reader,
+    const std::function<void()>& mark_ready) const
+{
+    if (!acknowledged || !start_reader()) return false;
+    mark_ready();
+    return true;
+}
+
+void SerialLifecycleCoordinator::before_stop(
+    const std::function<void()>& stop_reader,
+    const std::function<void()>& send_stop) const
+{
+    stop_reader();
+    send_stop();
+}
+
 bool write_imu_jsonl(FILE* file, const ImuFrame& frame)
 {
     if (!file ||
@@ -227,12 +244,14 @@ void CherrySerialSensor::setup()
         }
     }
 
-    if (!reader_.start()) {
+    if (!lifecycle_.after_ack(
+            acknowledged,
+            [this] { return reader_.start(); },
+            [this] { start_control_.mark_ready(); })) {
         fail_setup("cannot start Cherry serial reader thread");
         return;
     }
     initialized_ = true;
-    start_control_.mark_ready();
     fprintf(stderr, "[%s] Cherry serial START acknowledged on %s\n",
             name_.c_str(), tty_path_.c_str());
 }
@@ -245,16 +264,19 @@ void CherrySerialSensor::collect()
 
 void CherrySerialSensor::teardown()
 {
-    reader_.stop_and_join();
-    if (fd_ >= 0) {
-        const auto deadline = std::chrono::steady_clock::now() +
-                              std::chrono::milliseconds(200);
-        if (!send_control_until(cherry::encode_stop(kStopSequence), deadline)) {
-            fprintf(stderr, "[%s] failed to send Cherry STOP: %s\n",
-                    name_.c_str(), strerror(errno));
-        }
-        drain_after_stop(deadline);
-    }
+    lifecycle_.before_stop(
+        [this] { reader_.stop_and_join(); },
+        [this] {
+            if (fd_ < 0) return;
+            const auto deadline = std::chrono::steady_clock::now() +
+                                  std::chrono::milliseconds(200);
+            if (!send_control_until(cherry::encode_stop(kStopSequence),
+                                    deadline)) {
+                fprintf(stderr, "[%s] failed to send Cherry STOP: %s\n",
+                        name_.c_str(), strerror(errno));
+            }
+            drain_after_stop(deadline);
+        });
     close_resources();
     fprintf(stderr,
             "[%s] Cherry serial batches imu=%zu mag=%zu frame_meta=%zu "

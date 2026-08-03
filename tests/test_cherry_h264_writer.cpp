@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <future>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -50,17 +51,67 @@ void assert_metadata_line(const std::string& line) {
     assert(timestamp_us == 123456789ULL);
 }
 
-void test_full_nonblocking_fifo_fails_without_blocking() {
+void fill_pipe(int fd) {
+    const std::vector<uint8_t> fill(4096, 0x5a);
+    while (write(fd, fill.data(), fill.size()) > 0) {
+    }
+    assert(errno == EAGAIN || errno == EWOULDBLOCK);
+}
+
+void test_large_access_unit_completes_across_multiple_pipe_drains() {
+    int pipe_fds[2] = {-1, -1};
+    assert(pipe(pipe_fds) == 0);
+    const int flags = fcntl(pipe_fds[1], F_GETFL);
+    assert(flags >= 0);
+    assert(fcntl(pipe_fds[1], F_SETFL, flags | O_NONBLOCK) == 0);
+    FILE* fifo = fdopen(pipe_fds[1], "wb");
+    FILE* metadata = tmpfile();
+    assert(fifo != nullptr);
+    assert(metadata != nullptr);
+    std::string configure_error;
+    assert(configure_cherry_fifo_stream(fifo, configure_error));
+
+    std::atomic<size_t> drained_bytes{0};
+    std::atomic<size_t> drain_calls{0};
+    std::thread reader([&] {
+        uint8_t bytes[4096];
+        while (true) {
+            const ssize_t count = read(pipe_fds[0], bytes, sizeof(bytes));
+            if (count == 0) return;
+            if (count > 0) {
+                drained_bytes += static_cast<size_t>(count);
+                ++drain_calls;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+    });
+
+    CompressedFrame frame;
+    frame.frame_idx = 1;
+    frame.pts_us = 100;
+    frame.v4l2_sequence = 2;
+    frame.data.assign(512 * 1024, 0x6b);
+    CherryH264Writer writer(
+        fifo, metadata,
+        {std::chrono::seconds(2), [] { return true; }});
+    assert(writer.process(frame) == VideoFrameProcessResult::ok);
+    assert(writer.bytes() == frame.data.size());
+    assert(fclose(fifo) == 0);
+    reader.join();
+    assert(drained_bytes.load() == frame.data.size());
+    assert(drain_calls.load() > 2);
+    assert(fclose(metadata) == 0);
+    assert(close(pipe_fds[0]) == 0);
+}
+
+void test_full_nonblocking_fifo_cancels_without_blocking() {
     int pipe_fds[2] = {-1, -1};
     assert(pipe(pipe_fds) == 0);
     const int flags = fcntl(pipe_fds[1], F_GETFL);
     assert(flags >= 0);
     assert(fcntl(pipe_fds[1], F_SETFL, flags | O_NONBLOCK) == 0);
 
-    const std::vector<uint8_t> fill(4096, 0x5a);
-    while (write(pipe_fds[1], fill.data(), fill.size()) > 0) {
-    }
-    assert(errno == EAGAIN || errno == EWOULDBLOCK);
+    fill_pipe(pipe_fds[1]);
 
     FILE* fifo = fdopen(pipe_fds[1], "wb");
     FILE* metadata = tmpfile();
@@ -72,14 +123,49 @@ void test_full_nonblocking_fifo_fails_without_blocking() {
 
     const CompressedFrame frame{
         1, 100, 2, {0x00, 0x00, 0x00, 0x01, 0x65, 0xaa}};
-    CherryH264Writer writer(fifo, metadata);
+    CherryH264Writer writer(
+        fifo, metadata,
+        {std::chrono::seconds(2), [] { return false; }});
     auto result = std::async(std::launch::async, [&] {
         return writer.process(frame);
     });
     assert(result.wait_for(std::chrono::milliseconds(200)) ==
            std::future_status::ready);
     assert(result.get() == VideoFrameProcessResult::encoder_failure);
-    assert(std::string(writer.error()).size() > 0);
+    assert(std::string(writer.error()).find("cancelled") != std::string::npos);
+
+    assert(fclose(fifo) == 0);
+    assert(fclose(metadata) == 0);
+    assert(close(pipe_fds[0]) == 0);
+}
+
+void test_full_nonblocking_fifo_times_out_without_blocking() {
+    int pipe_fds[2] = {-1, -1};
+    assert(pipe(pipe_fds) == 0);
+    const int flags = fcntl(pipe_fds[1], F_GETFL);
+    assert(flags >= 0);
+    assert(fcntl(pipe_fds[1], F_SETFL, flags | O_NONBLOCK) == 0);
+    fill_pipe(pipe_fds[1]);
+
+    FILE* fifo = fdopen(pipe_fds[1], "wb");
+    FILE* metadata = tmpfile();
+    assert(fifo != nullptr);
+    assert(metadata != nullptr);
+    std::string configure_error;
+    assert(configure_cherry_fifo_stream(fifo, configure_error));
+
+    const CompressedFrame frame{
+        1, 100, 2, {0x00, 0x00, 0x00, 0x01, 0x65, 0xaa}};
+    CherryH264Writer writer(
+        fifo, metadata,
+        {std::chrono::milliseconds(50), [] { return true; }});
+    auto result = std::async(std::launch::async, [&] {
+        return writer.process(frame);
+    });
+    assert(result.wait_for(std::chrono::milliseconds(300)) ==
+           std::future_status::ready);
+    assert(result.get() == VideoFrameProcessResult::encoder_failure);
+    assert(std::string(writer.error()).find("timed out") != std::string::npos);
 
     assert(fclose(fifo) == 0);
     assert(fclose(metadata) == 0);
@@ -89,7 +175,9 @@ void test_full_nonblocking_fifo_fails_without_blocking() {
 }  // namespace
 
 int main() {
-    test_full_nonblocking_fifo_fails_without_blocking();
+    test_large_access_unit_completes_across_multiple_pipe_drains();
+    test_full_nonblocking_fifo_cancels_without_blocking();
+    test_full_nonblocking_fifo_times_out_without_blocking();
 
     const CompressedFrame frame{
         7,

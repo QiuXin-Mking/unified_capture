@@ -4,7 +4,9 @@
 #include <cassert>
 #include <chrono>
 #include <future>
+#include <string>
 #include <thread>
+#include <vector>
 
 int main()
 {
@@ -14,6 +16,7 @@ int main()
     std::atomic<int> maximum_concurrent{0};
     std::promise<void> first_frame;
     auto first_frame_seen = first_frame.get_future();
+    std::vector<std::string> events;
 
     cherry::SerialReadLoop reader(running, [&](int) {
         const int active = concurrent.fetch_add(1) + 1;
@@ -27,17 +30,32 @@ int main()
         return true;
     });
 
-    // setup() starts the reader immediately after ACK. The first post-ACK
-    // frame must be consumed before collect()/barrier-phase waiting begins.
-    assert(reader.start());
+    cherry::SerialLifecycleCoordinator lifecycle;
+    events.push_back("ack");
+    assert(lifecycle.after_ack(
+        true,
+        [&] {
+            events.push_back("reader.start");
+            return reader.start();
+        },
+        [&] { events.push_back("mark_ready"); }));
+    assert((events == std::vector<std::string>{
+                          "ack", "reader.start", "mark_ready"}));
     assert(!reader.start());
     assert(first_frame_seen.wait_for(std::chrono::milliseconds(200)) ==
            std::future_status::ready);
     assert(calls.load() > 0);
 
     running = false;
-    reader.wait_until_stopped();
-    reader.stop_and_join();
+    lifecycle.before_stop(
+        [&] {
+            reader.wait_until_stopped();
+            reader.stop_and_join();
+            events.push_back("reader.join");
+        },
+        [&] { events.push_back("STOP"); });
+    assert(events[events.size() - 2] == "reader.join");
+    assert(events.back() == "STOP");
     assert(maximum_concurrent.load() == 1);
     return 0;
 }
