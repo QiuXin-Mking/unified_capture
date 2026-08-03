@@ -25,7 +25,7 @@ protected:
 private:
     bool open_outputs();
     bool open_fifo_writer(int timeout_ms);
-    bool ffmpeg_accepts_input();
+    bool ffmpeg_is_alive();
     void fail_setup(const std::string& error);
     void wait_for_ffmpeg();
 

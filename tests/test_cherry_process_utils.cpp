@@ -2,13 +2,35 @@
 
 #include <cassert>
 #include <cerrno>
+#include <cstdlib>
 #include <fcntl.h>
 #include <string>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 int main()
 {
+    char executable_dir[] = "/tmp/cherry-executable-XXXXXX";
+    assert(mkdtemp(executable_dir) != nullptr);
+    const std::string executable_path =
+        std::string(executable_dir) + "/fake-ffmpeg";
+    const int executable_fd = open(
+        executable_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    assert(executable_fd >= 0);
+    assert(write(executable_fd, "#!/bin/sh\n", 10) == 10);
+    assert(close(executable_fd) == 0);
+    assert(chmod(executable_path.c_str(), 0755) == 0);
+    const std::string search_path =
+        "/definitely/missing:" + std::string(executable_dir);
+    assert(resolve_cherry_executable("fake-ffmpeg", search_path) ==
+           executable_path);
+    assert(resolve_cherry_executable(executable_path, search_path) ==
+           executable_path);
+    assert(resolve_cherry_executable("missing-ffmpeg", search_path).empty());
+    assert(unlink(executable_path.c_str()) == 0);
+    assert(rmdir(executable_dir) == 0);
+
     char path[] = "/tmp/cherry-cloexec-XXXXXX";
     const int seed_fd = mkstemp(path);
     assert(seed_fd >= 0);

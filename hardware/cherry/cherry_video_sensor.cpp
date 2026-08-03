@@ -5,9 +5,11 @@
 #include "hardware/video/capture_pipeline.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <linux/videodev2.h>
@@ -16,6 +18,8 @@
 #include <thread>
 #include <unistd.h>
 #include <utility>
+
+extern char** environ;
 
 namespace {
 
@@ -122,11 +126,11 @@ void CherryVideoSensor::collect()
     if (!initialized_) return;
 
     CherryH264Writer writer(
-        fifo_file_, metadata_file_,
-        {std::chrono::milliseconds(500),
-         [this] { return ffmpeg_accepts_input(); }});
+        fifo_file_, metadata_file_, {std::chrono::milliseconds(500)});
     StopOnWriterFailure processor(writer, running_);
-    stats_ = run_capture_pipeline(device_, running_, processor, 12);
+    SupervisedCaptureSource source(
+        device_, [this] { return ffmpeg_is_alive(); });
+    stats_ = run_capture_pipeline(source, running_, processor, 12);
     h264_bytes_ = writer.bytes();
     writer_error_ = writer.error();
     if (!writer_error_.empty()) {
@@ -180,6 +184,15 @@ void CherryVideoSensor::teardown()
 
 bool CherryVideoSensor::open_outputs()
 {
+    const char* path_environment = getenv("PATH");
+    const std::string ffmpeg_path = resolve_cherry_executable(
+        "ffmpeg", path_environment ? path_environment :
+                                      "/usr/local/bin:/usr/bin:/bin");
+    if (ffmpeg_path.empty()) {
+        fail_setup("cannot resolve ffmpeg executable from PATH");
+        return false;
+    }
+
     const unsigned long sequence = fifo_sequence.fetch_add(1);
     fifo_path_ = "/tmp/cherry_h264_" + std::to_string(getpid()) + "_" +
                  safe_fifo_component(name_) + "_" +
@@ -192,6 +205,25 @@ bool CherryVideoSensor::open_outputs()
 
     const std::string output_path = output_dir_ + "/cherry_stereo.mkv";
     const std::string fps = std::to_string(config_.fps);
+    std::array<char*, 15> ffmpeg_argv{
+        const_cast<char*>(ffmpeg_path.c_str()),
+        const_cast<char*>("-y"),
+        const_cast<char*>("-hide_banner"),
+        const_cast<char*>("-loglevel"),
+        const_cast<char*>("error"),
+        const_cast<char*>("-f"),
+        const_cast<char*>("h264"),
+        const_cast<char*>("-r"),
+        const_cast<char*>(fps.c_str()),
+        const_cast<char*>("-i"),
+        const_cast<char*>(fifo_path_.c_str()),
+        const_cast<char*>("-c"),
+        const_cast<char*>("copy"),
+        const_cast<char*>(output_path.c_str()),
+        nullptr,
+    };
+    const char* const ffmpeg_executable = ffmpeg_path.c_str();
+    char* const* const ffmpeg_arguments = ffmpeg_argv.data();
     ffmpeg_fallback_fd_limit_ = cherry_inherited_fd_limit();
     ffmpeg_pid_ = fork();
     if (ffmpeg_pid_ < 0) {
@@ -200,10 +232,7 @@ bool CherryVideoSensor::open_outputs()
     }
     if (ffmpeg_pid_ == 0) {
         close_cherry_inherited_fds(3, ffmpeg_fallback_fd_limit_);
-        execlp("ffmpeg", "ffmpeg", "-y", "-hide_banner", "-loglevel",
-               "error", "-f", "h264", "-r", fps.c_str(), "-i",
-               fifo_path_.c_str(), "-c", "copy", output_path.c_str(),
-               static_cast<char*>(nullptr));
+        execve(ffmpeg_executable, ffmpeg_arguments, environ);
         _exit(127);
     }
     if (!open_fifo_writer(3000)) {
@@ -223,9 +252,9 @@ bool CherryVideoSensor::open_outputs()
     return true;
 }
 
-bool CherryVideoSensor::ffmpeg_accepts_input()
+bool CherryVideoSensor::ffmpeg_is_alive()
 {
-    if (!running_ || ffmpeg_pid_ <= 0) return false;
+    if (ffmpeg_pid_ <= 0) return false;
     int status = 0;
     const pid_t result = waitpid(ffmpeg_pid_, &status, WNOHANG);
     if (result == 0 || (result < 0 && errno == EINTR)) return true;

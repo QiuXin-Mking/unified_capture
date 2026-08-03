@@ -136,6 +136,21 @@ private:
     uint8_t bytes_[2] = {0x01, 0x02};
 };
 
+class NoFrameSource {
+public:
+    bool wait_for_frame(int) {
+        ++waits_;
+        return false;
+    }
+    bool dequeue_frame(V4l2FrameView&) { return false; }
+    bool requeue_frame() { return true; }
+    bool fatal_error() const { return false; }
+    int waits() const { return waits_; }
+
+private:
+    int waits_ = 0;
+};
+
 template <typename Source>
 void assert_fatal_source_stops_pipeline(Source& source) {
     std::atomic<bool> running{true};
@@ -154,6 +169,24 @@ void assert_fatal_source_stops_pipeline(Source& source) {
 }  // namespace
 
 int main() {
+    {
+        std::atomic<bool> running{true};
+        NoFrameSource raw_source;
+        int health_checks = 0;
+        SupervisedCaptureSource source(raw_source, [&] {
+            ++health_checks;
+            return health_checks < 3;
+        });
+        NoopProcessor processor;
+        const VideoPipelineStats stats =
+            run_capture_pipeline(source, running, processor, 1);
+        assert(!running);
+        assert(source.fatal_error());
+        assert(raw_source.waits() >= 1);
+        assert(health_checks >= 3);
+        assert(stats.acquired == 0);
+    }
+
     {
         FatalWaitSource source;
         assert_fatal_source_stops_pipeline(source);

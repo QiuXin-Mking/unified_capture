@@ -6,6 +6,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #ifdef __linux__
@@ -37,6 +38,33 @@ inline FILE* open_cherry_cloexec_output(const std::string& path,
                 strerror(saved_errno);
     }
     return file;
+}
+
+inline std::string resolve_cherry_executable(
+    const std::string& executable, const std::string& search_path) {
+    const auto is_executable_file = [](const std::string& candidate) {
+        struct stat status = {};
+        return access(candidate.c_str(), X_OK) == 0 &&
+               stat(candidate.c_str(), &status) == 0 &&
+               S_ISREG(status.st_mode);
+    };
+    if (executable.empty()) return {};
+    if (executable.find('/') != std::string::npos) {
+        return is_executable_file(executable) ? executable : std::string{};
+    }
+
+    size_t begin = 0;
+    while (begin <= search_path.size()) {
+        const size_t end = search_path.find(':', begin);
+        std::string directory = search_path.substr(
+            begin, end == std::string::npos ? std::string::npos : end - begin);
+        if (directory.empty()) directory = ".";
+        const std::string candidate = directory + "/" + executable;
+        if (is_executable_file(candidate)) return candidate;
+        if (end == std::string::npos) break;
+        begin = end + 1;
+    }
+    return {};
 }
 
 inline int cherry_inherited_fd_limit() {

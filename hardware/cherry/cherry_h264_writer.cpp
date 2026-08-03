@@ -116,8 +116,8 @@ bool CherryH264Writer::write_nonblocking(const uint8_t* data, size_t size,
     const auto deadline = std::chrono::steady_clock::now() + options_.timeout;
     size_t offset = 0;
     while (offset < size) {
-        if (options_.keep_running && !options_.keep_running()) {
-            error_ = "Cherry H.264 write cancelled";
+        if (std::chrono::steady_clock::now() >= deadline) {
+            error_ = "Cherry H.264 write timed out";
             return false;
         }
 
@@ -138,8 +138,9 @@ bool CherryH264Writer::write_nonblocking(const uint8_t* data, size_t size,
             return false;
         }
 
-        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            deadline - std::chrono::steady_clock::now());
+        const auto remaining =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                deadline - std::chrono::steady_clock::now());
         if (remaining.count() <= 0) {
             error_ = "Cherry H.264 write timed out";
             return false;
@@ -147,10 +148,8 @@ bool CherryH264Writer::write_nonblocking(const uint8_t* data, size_t size,
         struct pollfd descriptor = {fd, POLLOUT, 0};
         const int wait_ms = static_cast<int>(
             std::min<int64_t>(remaining.count(), 20));
-        int status;
-        do {
-            status = poll(&descriptor, 1, wait_ms);
-        } while (status < 0 && errno == EINTR);
+        const int status = poll(&descriptor, 1, wait_ms);
+        if (status < 0 && errno == EINTR) continue;
         if (status < 0) {
             set_file_error("Cherry H.264 poll failed");
             return false;

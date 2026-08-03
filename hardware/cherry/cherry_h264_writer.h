@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <chrono>
 #include <cstdio>
-#include <functional>
 #include <string>
 
 // The ffmpeg FIFO must stay nonblocking so a dead/non-reading child cannot
@@ -14,7 +13,6 @@ bool configure_cherry_fifo_stream(FILE* fifo, std::string& error);
 
 struct CherryH264WriteOptions {
     std::chrono::milliseconds timeout{500};
-    std::function<bool()> keep_running;
 };
 
 class CherryH264Writer {

@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <thread>
+#include <utility>
 
 enum class VideoFrameProcessResult {
     ok,
@@ -24,6 +25,48 @@ bool capture_source_fatal(const CaptureSource& source) {
     }
     return false;
 }
+
+template <typename CaptureSource, typename HealthCheck>
+class SupervisedCaptureSource {
+public:
+    SupervisedCaptureSource(CaptureSource& source, HealthCheck health_check)
+        : source_(source), health_check_(std::move(health_check)) {}
+
+    bool wait_for_frame(int timeout_ms) {
+        if (!healthy()) return false;
+        const bool ready = source_.wait_for_frame(timeout_ms);
+        if (!healthy()) return false;
+        if (!ready && capture_source_fatal(source_)) fatal_error_ = true;
+        return ready;
+    }
+
+    bool dequeue_frame(V4l2FrameView& view) {
+        const bool dequeued = source_.dequeue_frame(view);
+        if (!dequeued && capture_source_fatal(source_)) fatal_error_ = true;
+        return dequeued;
+    }
+
+    bool requeue_frame() {
+        const bool requeued = source_.requeue_frame();
+        if (!requeued) fatal_error_ = true;
+        return requeued;
+    }
+
+    bool fatal_error() const {
+        return fatal_error_ || capture_source_fatal(source_);
+    }
+
+private:
+    bool healthy() {
+        if (health_check_()) return true;
+        fatal_error_ = true;
+        return false;
+    }
+
+    CaptureSource& source_;
+    HealthCheck health_check_;
+    bool fatal_error_ = false;
+};
 
 inline uint64_t capture_pipeline_now_us() {
     return static_cast<uint64_t>(
