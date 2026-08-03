@@ -74,8 +74,9 @@ public:
         return *this;
     }
 
-    // ── open: fd, S_FMT MJPEG, S_PARM fps, REQBUFS mmap, QUERYBUF+mmap ──
-    bool open(const std::string& path, int width, int height, int fps) {
+    // ── open: fd, S_FMT, S_PARM fps, REQBUFS mmap, QUERYBUF+mmap ──
+    bool open(const std::string& path, int width, int height, int fps,
+              uint32_t pixel_format = V4L2_PIX_FMT_MJPEG) {
         fd_ = ::open(path.c_str(), O_RDWR | O_NONBLOCK);
         if (fd_ < 0) {
             fprintf(stderr, "[v4l2] open(%s) failed: %s\n", path.c_str(), strerror(errno));
@@ -99,23 +100,35 @@ public:
             return false;
         }
 
-        // Set MJPEG format
+        // Set and verify the exact capture format requested by the caller.
         struct v4l2_format fmt = {};
         fmt.type                = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         fmt.fmt.pix.width       = (uint32_t)width;
         fmt.fmt.pix.height      = (uint32_t)height;
-        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
+        fmt.fmt.pix.pixelformat = pixel_format;
         fmt.fmt.pix.field       = V4L2_FIELD_ANY;
 
         if (xioctl(VIDIOC_S_FMT, &fmt) < 0) {
-            fprintf(stderr, "[v4l2] S_FMT MJPEG failed: %s\n", strerror(errno));
+            char requested_fourcc[5];
+            fourcc_string(pixel_format, requested_fourcc);
+            fprintf(stderr, "[v4l2] S_FMT %s failed: %s\n",
+                    requested_fourcc, strerror(errno));
             close();
             return false;
         }
         actual_width_  = (int)fmt.fmt.pix.width;
         actual_height_ = (int)fmt.fmt.pix.height;
-        if (actual_width_ <= 0 || actual_height_ <= 0) {
-            fprintf(stderr, "[v4l2] invalid resolution %dx%d\n", actual_width_, actual_height_);
+        char requested_fourcc[5];
+        char selected_fourcc[5];
+        fourcc_string(pixel_format, requested_fourcc);
+        fourcc_string(fmt.fmt.pix.pixelformat, selected_fourcc);
+        if (fmt.fmt.pix.pixelformat != pixel_format ||
+            actual_width_ != width || actual_height_ != height) {
+            fprintf(stderr,
+                    "[v4l2] format mismatch: requested %dx%d %s, "
+                    "driver selected %dx%d %s\n",
+                    width, height, requested_fourcc,
+                    actual_width_, actual_height_, selected_fourcc);
             close();
             return false;
         }
@@ -167,8 +180,9 @@ public:
             }
         }
 
-        fprintf(stderr, "[v4l2] %s opened: %dx%d MJPEG @ %dfps, %zu bufs\n",
-                path.c_str(), actual_width_, actual_height_, fps, buffers_.size());
+        fprintf(stderr, "[v4l2] %s opened: %dx%d %s @ %dfps, %zu bufs\n",
+                path.c_str(), actual_width_, actual_height_, selected_fourcc,
+                fps, buffers_.size());
         return true;
     }
 
@@ -287,6 +301,17 @@ public:
     }
 
 private:
+    static void fourcc_string(uint32_t fourcc, char text[5]) {
+        for (unsigned int i = 0; i < 4; ++i) {
+            const unsigned char byte =
+                static_cast<unsigned char>((fourcc >> (8 * i)) & 0xff);
+            text[i] = byte >= 0x20 && byte <= 0x7e
+                          ? static_cast<char>(byte)
+                          : '?';
+        }
+        text[4] = '\0';
+    }
+
     int xioctl(unsigned long request, void* arg) {
         int r;
         do { r = ioctl(fd_, request, arg); } while (r == -1 && errno == EINTR);

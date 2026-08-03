@@ -39,7 +39,7 @@ C_OBJECTS := $(patsubst %.c,build/obj/%.o,$(C_SOURCES))
 OBJS := $(CPP_OBJECTS) $(C_OBJECTS)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean scan test test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_source_layout help
+.PHONY: all clean scan test test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_cherry_h264_writer test_source_layout help
 
 all: $(TARGET)
 
@@ -59,7 +59,7 @@ build/obj/%.o: %.c
 scan: $(TARGET)
 	./$(TARGET) --scan
 
-test: test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_source_layout
+test: test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_cherry_h264_writer test_source_layout
 
 test_product_config: build/tests/test_product_config
 	./$<
@@ -202,6 +202,14 @@ test_cherry_protocol: build/tests/test_cherry_protocol
 build/tests/test_cherry_protocol: tests/test_cherry_protocol.cpp hardware/cherry/cherry_protocol.cpp hardware/cherry/cherry_protocol.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_cherry_protocol.cpp hardware/cherry/cherry_protocol.cpp
+
+test_cherry_h264_writer: build/tests/test_cherry_h264_writer
+	./$<
+
+build/tests/test_cherry_h264_writer: tests/test_cherry_h264_writer.cpp \
+	hardware/cherry/cherry_h264_writer.cpp hardware/cherry/cherry_h264_writer.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_cherry_h264_writer.cpp hardware/cherry/cherry_h264_writer.cpp
 
 test_source_layout:
 	sh tests/test_source_layout.sh
