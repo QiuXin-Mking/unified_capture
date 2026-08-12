@@ -8,26 +8,52 @@
 #include <unistd.h>
 #include <utility>
 
+namespace {
+
+bool is_preview_channel(std::string_view channel) {
+    return channel == "wrist_left" || channel == "wrist_right" ||
+           channel == "jhh04" || channel == "jhh02";
+}
+
+bool is_absolute_path(std::string_view path) {
+    return !path.empty() && path.front() == '/';
+}
+
+}  // namespace
+
 SocketCommand parse_socket_command(std::string_view request) {
     if (!request.empty() && request.back() == '\n') {
         request.remove_suffix(1);
     }
     if (request == "start") {
-        return {SocketCommandKind::start, {}};
+        return {SocketCommandKind::start, {}, {}};
     }
     if (request == "stop") {
-        return {SocketCommandKind::stop, {}};
+        return {SocketCommandKind::stop, {}, {}};
     }
     if (request == "status") {
-        return {SocketCommandKind::status, {}};
+        return {SocketCommandKind::status, {}, {}};
     }
 
     constexpr std::string_view prefix = "preview:";
     if (request.starts_with(prefix) && request.size() > prefix.size()) {
-        return {SocketCommandKind::preview,
-                std::string(request.substr(prefix.size()))};
+        const std::string_view suffix = request.substr(prefix.size());
+        const size_t separator = suffix.find(':');
+        if (separator != std::string_view::npos &&
+            is_preview_channel(suffix.substr(0, separator))) {
+            const std::string_view path = suffix.substr(separator + 1);
+            if (is_absolute_path(path)) {
+                return {SocketCommandKind::preview,
+                        std::string(suffix.substr(0, separator)),
+                        std::string(path)};
+            }
+            return {SocketCommandKind::unknown, {}, {}};
+        }
+        if (is_absolute_path(suffix)) {
+            return {SocketCommandKind::preview, {}, std::string(suffix)};
+        }
     }
-    return {SocketCommandKind::unknown, {}};
+    return {SocketCommandKind::unknown, {}, {}};
 }
 
 SocketServer::SocketServer(std::string path)

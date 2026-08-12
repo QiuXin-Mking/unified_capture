@@ -8,6 +8,7 @@ enum class SocketCommandKind { start, stop, preview, status, unknown };
 
 struct SocketCommand {
     SocketCommandKind kind;
+    std::string preview_channel;
     std::string preview_path;
 };
 
