@@ -3,6 +3,7 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 class VideoCaptureControl {
@@ -29,20 +30,30 @@ public:
         return jhh2_remaining.load() == 0;
     }
 
-    void request_preview(std::string path) {
+    void request_preview(std::string channel, std::string path) {
         std::lock_guard<std::mutex> lock(preview_mutex_);
-        preview_path_ = std::move(path);
-        preview_pending_ = true;
+        if (channel.empty()) {
+            legacy_preview_path_ = std::move(path);
+            legacy_preview_pending_ = true;
+            return;
+        }
+        preview_paths_[std::move(channel)] = std::move(path);
     }
 
-    bool take_preview(std::string& path) {
+    bool take_preview(const std::string& camera_name, std::string& path) {
         std::lock_guard<std::mutex> lock(preview_mutex_);
-        if (!preview_pending_) {
-            return false;
+        const auto request = preview_paths_.find(camera_name);
+        if (request != preview_paths_.end()) {
+            path = std::move(request->second);
+            preview_paths_.erase(request);
+            return true;
         }
-        preview_pending_ = false;
-        path = std::move(preview_path_);
-        return true;
+        if (legacy_preview_pending_) {
+            legacy_preview_pending_ = false;
+            path = std::move(legacy_preview_path_);
+            return true;
+        }
+        return false;
     }
 
     std::atomic<int> jhh2_remaining{0};
@@ -56,7 +67,8 @@ private:
         }
     }
 
-    bool preview_pending_ = false;
-    std::string preview_path_;
+    bool legacy_preview_pending_ = false;
+    std::string legacy_preview_path_;
+    std::unordered_map<std::string, std::string> preview_paths_;
     std::mutex preview_mutex_;
 };

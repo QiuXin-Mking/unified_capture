@@ -256,7 +256,7 @@ private:
         VideoFrameProcessor processor(
             options, ch.output_h265 ? &ch.mpp : nullptr,
             ch.fifo_fp, ch.y8_fp, ch.has_imu ? &ch.imu_queue : nullptr,
-            ch.output_h265 ? &control_ : nullptr);
+            &control_);
 
         const auto start = std::chrono::steady_clock::now();
         ch.stats = run_capture_pipeline(ch.device, running_, processor, 12);

@@ -33,7 +33,7 @@ public:
              const ControlPump& pump);
     void wait_teardown();
     std::string cameras_json() const;
-    void request_preview(std::string path);
+    void request_preview(std::string channel, std::string path);
 
 private:
     CameraDiscoveryResult cameras_;

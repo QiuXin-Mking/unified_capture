@@ -240,7 +240,8 @@ int Runtime::run() {
                 return std::string(
                     "{\"ok\":false,\"error\":\"not running\"}");
             }
-            sessions.request_preview(command.preview_path);
+            sessions.request_preview(command.preview_channel,
+                                     command.preview_path);
             return std::string("{\"ok\":true}");
         }
 

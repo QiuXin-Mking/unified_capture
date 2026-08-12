@@ -24,9 +24,24 @@ int main() {
     control.reset_stream_start(2, false);
     assert(control.jhh2_remaining.load() == 2);
     assert(control.jhh02_init_done.load());
-    control.request_preview("/tmp/preview.jpg");
     std::string path;
-    assert(control.take_preview(path));
-    assert(path == "/tmp/preview.jpg");
-    assert(!control.take_preview(path));
+    control.request_preview("jhh02", "/tmp/head.jpg");
+    control.request_preview("wrist_left", "/tmp/left.jpg");
+    assert(!control.take_preview("jhh04", path));
+    assert(control.take_preview("wrist_left", path));
+    assert(path == "/tmp/left.jpg");
+    assert(control.take_preview("jhh02", path));
+    assert(path == "/tmp/head.jpg");
+
+    control.request_preview("jhh02", "/tmp/head-2.jpg");
+    control.request_preview("wrist_right", "/tmp/right.jpg");
+    assert(control.take_preview("wrist_right", path));
+    assert(path == "/tmp/right.jpg");
+    assert(control.take_preview("jhh02", path));
+    assert(path == "/tmp/head-2.jpg");
+
+    control.request_preview("", "/tmp/legacy.jpg");
+    assert(control.take_preview("jhh04", path));
+    assert(path == "/tmp/legacy.jpg");
+    assert(!control.take_preview("jhh02", path));
 }

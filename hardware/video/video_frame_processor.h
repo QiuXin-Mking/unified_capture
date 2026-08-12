@@ -202,7 +202,7 @@ private:
             return;
         }
         std::string preview_path;
-        if (!control_->take_preview(preview_path)) {
+        if (!control_->take_preview(options_.camera_name, preview_path)) {
             return;
         }
         const std::string temporary = preview_path + ".tmp";

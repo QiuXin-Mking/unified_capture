@@ -263,6 +263,6 @@ std::string SessionRunner::cameras_json() const {
     return profile_cameras_json(cameras_);
 }
 
-void SessionRunner::request_preview(std::string path) {
-    capture_control_.request_preview(std::move(path));
+void SessionRunner::request_preview(std::string channel, std::string path) {
+    capture_control_.request_preview(std::move(channel), std::move(path));
 }
