@@ -185,6 +185,7 @@ done
 - 以 `--single` 启动的守护进程在完成一次 session 后即退出（systemd `Restart=always` 会拉起）。停止预览会触发一次退出+重启，重启的几秒内 socket 不可用，上层轮询要容忍 `unreachable`/超时。
 - `status.cameras[<key>]` 只反映「相机在线」，与「预览/录制是否进行」无关。前端展示相机「在线/离线」时，`connected` 应只看 `cameras[<key>]`，不要与 `liveActive`（previewing/recording）绑定——否则停止预览后 `liveActive=false` 会把在线的相机误显示为「无信号」。预览帧（`<img src>`）的显示才由 `liveActive` 控制。
 - `cameras` 的 key 是**固定名**（见上表：`jhh02`/`jhh04`/`wrist_left`/`wrist_right`/`jhh2_left`/`jhh2_right`）。前端判断某路在线时必须用这些实际 key，不要用 `four`/`quad`/`ego_h_four`/`head_four` 之类自造名称——否则 `cameras[key]` 取不到值，会把在线相机误判为「离线」。
+- 前端 `CameraFeed` 的「在线/有信号」徽章还要避免被 **transient 的预览帧错误**污染：`failed`（`<img>` 的 `onError` 标志）在相机恢复在线时必须复位，不能只在预览有画面（`src` 存在）时才复位——否则停止预览后残留 `failed=true`，会把在线相机误显示成「无信号」。正确做法是「`connected`（`cameras[key]`）为真即复位 `failed`」，`src` 仅作为依赖触发重查。
 
 ## 相关文件
 
