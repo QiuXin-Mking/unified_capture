@@ -104,18 +104,33 @@ status\n
 | `as5600` | boolean | AS5600 功能是否启用 |
 | `vive` | boolean | VIVE Tracker 功能是否启用 |
 
-### `preview:<path>`
+### `preview:<channel>:<path>` 与 `preview:<path>`
+
+预览导出命令支持两种格式：
+
+**通道格式（device-ui 当前使用）：**
+
+```text
+preview:jhh02:/tmp/camera_preview_jhh02.jpg\n
+```
+
+`<channel>` ∈ `jhh02` | `jhh04` | `wrist_left` | `wrist_right`；`<path>` 必须是绝对路径（以 `/` 开头）。
+
+**legacy 单路径格式：**
 
 ```text
 preview:/tmp/preview.jpg\n
 ```
 
-仅在采集中可用。成功时返回 `{"ok":true}`，表示已登记导出请求；JPEG 由采集线程在后续帧中写到指定路径，调用方应在读取文件前确认其已生成。
+两者仅在**采集中**可用（`session_running == true`）。成功返回 `{"ok":true}`，仅表示已登记导出请求；JPEG 由采集线程在后续帧中写入指定路径（先写 `<path>.tmp` 再 `rename` 原子落盘），调用方应在读取文件前确认其已生成。
+
+> **关键约束：没有「仅预览不落盘」模式。** `preview` 要求当前有正在运行的 session，而 running session 本身就是一次完整采集（会写 MKV/Y8/IMU）。因此上层（device-ui）的「实时预览」是用「启动一个临时采集 session + 抽帧 + 停止后删除该 session」实现的，不是守护进程的原生预览态。
 
 | 条件 | 响应 |
 |------|------|
 | 正在采集 | `{"ok":true}` |
 | 空闲 | `{"ok":false,"error":"not running"}` |
+| 非法通道或非绝对路径 | `{"ok":false,"error":"unknown command"}` |
 
 ### 未知命令
 
@@ -155,6 +170,8 @@ done
 - `start` 成功后轮询 `status.running`，不要将受理响应当作采集已就绪。
 - `stop` 成功后继续轮询 `status.running`，直到为 `false`；这能覆盖视频封装和文件关闭的收尾时间。
 - `preview` 成功仅表示请求已登记，读取 JPEG 前应确认目标文件已经生成。
+- 「实时预览」不是守护进程的原生能力：`preview` 只在 `running` 时可用，所以上层要先 `start` 一个临时 session，再抽帧，最后 `stop` 并删除该 session。device-ui 用 `<session_dir>/.device-ui-preview` 标记这种临时 session，停止预览时删除、点「录制」时删掉标记「转正」为正式录制（`promote`）。`status.running` 无法区分「预览 session」和「正式录制 session」，上层必须用该标记自己区分——只看到 `running:true` 就把 UI 置为「录制中」是错的。
+- 以 `--single` 启动的守护进程在完成一次 session 后即退出（systemd `Restart=always` 会拉起）。停止预览会触发一次退出+重启，重启的几秒内 socket 不可用，上层轮询要容忍 `unreachable`/超时。
 
 ## 相关文件
 
@@ -169,3 +186,4 @@ done
 |------|------|
 | 2026-07-25 | 首次定义 Socket 控制接口 |
 | 2026-07-27 | 迁入 `docs/`，按单线程 `poll()` 实现更新协议与状态语义 |
+| 2026-08-13 | 补充 `preview:<channel>:<path>` 通道格式、预览=临时录制的约束、`.device-ui-preview` 标记与 promote、`--single` 退出语义 |

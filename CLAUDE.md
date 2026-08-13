@@ -120,7 +120,7 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，每条命令以换行�
 - `status` → JSON（含 cameras ready/running/elapsed 状态）
 - `start` → 开始采集
 - `stop` → 停止采集
-- `preview:<path>` → 导出当前帧 JPEG 缩略图到指定路径
+- `preview:<channel>:<path>` → 导出当前帧 JPEG 缩略图到指定路径（channel ∈ `jhh02`/`jhh04`/`wrist_left`/`wrist_right`，也支持无 channel 的 legacy `preview:<path>`）；仅在 `running` 时可用——预览本质是「临时采集 session + 抽帧」，无原生「仅预览不落盘」模式
 
 ### 输出结构 (SD 卡)
 
