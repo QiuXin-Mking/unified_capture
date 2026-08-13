@@ -38,3 +38,4 @@
 - [2026-07-26-tstc-sdk-multi-session-issues.md](2026-07-26-tstc-sdk-multi-session-issues.md)
 - [2026-07-27-as5600-hardware-migration-remote-sync-gap.md](2026-07-27-as5600-hardware-migration-remote-sync-gap.md)
 - [2026-08-13-ui-camera-preview-unavailable.md](2026-08-13-ui-camera-preview-unavailable.md)
+- [2026-08-13-wrist-cameras-not-detected-mango-profile.md](2026-08-13-wrist-cameras-not-detected-mango-profile.md)
