@@ -99,10 +99,19 @@ status\n
 | `running` | boolean | 是否有正在运行的 session；停止后的 `status:false` 响应表示主线程已完成本次 session 清理 |
 | `session` | `null` | 当前实现始终返回 `null`；不要依赖 session 名称 |
 | `elapsed_ms` | integer | 运行中的 session 时长；空闲时为 `0` |
-| `cameras` | object | 已启用摄像头的可用状态；未检测到的六目通道不会出现在对象中 |
+| `cameras` | object | 已启用摄像头的可用状态；key 集合随 `product` profile 变化（见下表），未检测到的通道不会出现 |
 | `imu` | boolean | IMU 功能是否启用 |
 | `as5600` | boolean | AS5600 功能是否启用 |
 | `vive` | boolean | VIVE Tracker 功能是否启用 |
+
+`cameras` 的 key 集合由 `/etc/unified_capture/product.conf` 的 profile 决定：
+
+| profile | `cameras` 的 key |
+|---------|------------------|
+| `mango`（legacy_head） | `jhh02`、`jhh04`、`jhh2_left`、`jhh2_right` |
+| `banana`（腕部+六目） | `jhh02`、`jhh04`、`wrist_left`、`wrist_right` |
+
+> **注意**：device-ui 前端的「Mango」产品对应这里的 `banana` profile（命名错位见 `CLAUDE.md`）。UI 的 `wrist-left`/`wrist-right` 预览通道依赖 `banana` 下 `wrist_left`/`wrist_right` 两个 key 出现。
 
 ### `preview:<channel>:<path>` 与 `preview:<path>`
 
@@ -187,3 +196,4 @@ done
 | 2026-07-25 | 首次定义 Socket 控制接口 |
 | 2026-07-27 | 迁入 `docs/`，按单线程 `poll()` 实现更新协议与状态语义 |
 | 2026-08-13 | 补充 `preview:<channel>:<path>` 通道格式、预览=临时录制的约束、`.device-ui-preview` 标记与 promote、`--single` 退出语义 |
+| 2026-08-13 | 补充 `status.cameras` 的 profile 依赖：mango/banana 的 key 集合、前端「Mango」↔ 守护进程 `banana` 命名错位 |
