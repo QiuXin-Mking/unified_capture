@@ -113,6 +113,8 @@ status\n
 
 > **注意**：device-ui 前端的「Mango」产品对应这里的 `banana` profile（命名错位见 `CLAUDE.md`）。UI 的 `wrist-left`/`wrist-right` 预览通道依赖 `banana` 下 `wrist_left`/`wrist_right` 两个 key 出现。
 
+`status` 在**空闲（非录制）时会重新扫描 USB 设备**（`discover_cameras`，枚举日志重定向到 `/dev/null`），因此 `cameras` 反映运行时热插拔——拔插相机后，下一次 `status` 就能拿到最新的在线/离线状态。录制进行中不重扫（避免打开正在采流的设备）。
+
 ### `preview:<channel>:<path>` 与 `preview:<path>`
 
 预览导出命令支持两种格式：
