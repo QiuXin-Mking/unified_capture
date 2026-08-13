@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RK3588 统一采集程序。`mango` 保持 2 路 JHH2 独立双目与六目模组；`banana` 为左、右腕部单目，输出 H.265 MKV 和异步 IMU JSONL；`cherry` 为 YCTC SC233HGS 双目，直通 UVC H.264 并采集 CDC ACM IMU/MAG/FRAME_META。banana 与 cherry 均不输出 Y8。目标平台为 RK3588 ARM64 板端。
 
-SDK: **Nori Xvision v10.00.09** (替代旧 TSTC USBCam_API v1.0.0)
+采集方式: **UVC (V4L2)** — 摄像头通过 USB Video Class 协议经 V4L2 从 `/dev/video*` 获取 MJPG/H.264 帧
 
 ## 编译
 
@@ -15,8 +15,7 @@ SDK: **Nori Xvision v10.00.09** (替代旧 TSTC USBCam_API v1.0.0)
 make
 
 # 交叉编译
-make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc \
-     NORI_INC=/path/to/nori/include NORI_LIB=/path/to/nori/lib
+make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc
 
 # 扫描设备
 make scan
@@ -27,7 +26,7 @@ make test
 
 生产程序的编译单元包括 `app/*.cpp`、`core/product_config.cpp`、`hardware/common/sensor.cpp`、`hardware/video/device_discovery.cpp`、`hardware/wrist/*.cpp`、`hardware/cherry/*.cpp` 和 `hardware/as5600/as5600.c`。
 
-`/etc/unified_capture/product.conf` 选择 `mango`、`banana` 或 `cherry`；`/etc/unified_capture/camera-map.conf` 保存 Nori `iProduct` 匹配和 Cherry 的严格视频参数。Cherry 通过 sysfs USB device 父路径配对 UVC 与 ttyACM，不能只按 bus number 配对。腕部麦克风和 Cherry 腕部相机能力尚未确认；不要在未另行批准前增加音频或声称腕部硬件可用。
+`/etc/unified_capture/product.conf` 选择 `mango`、`banana` 或 `cherry`；`/etc/unified_capture/camera-map.conf` 保存 UVC `iProduct` 匹配和 Cherry 的严格视频参数。Cherry 通过 sysfs USB device 父路径配对 UVC 与 ttyACM，不能只按 bus number 配对。腕部麦克风和 Cherry 腕部相机能力尚未确认；不要在未另行批准前增加音频或声称腕部硬件可用。
 
 ## 架构
 
@@ -39,7 +38,7 @@ Socket 通信全部合并到主线程 poll() 中处理。
 app/main.cpp
  └── Runtime (app/runtime.cpp，单线程 poll)
       ├── SocketServer         → /tmp/unified_capture.sock
-      ├── discover_cameras()   → Nori Xvision 设备枚举
+      ├── discover_cameras()   → V4L2 设备枚举
       ├── GpioControl          → GPIO 按键与指示灯
       └── SessionRunner
            ├── VideoSensor × 2   → JHH2 左/右（各自 std::thread）
@@ -68,7 +67,7 @@ app/main.cpp
 ### 视频采集管道
 
 ```
-Nori Xvision SDK (MJPEG, GetFrameBuff 轮询)
+V4L2 (MJPEG)
   → turbojpeg 解码 → BGR24
     ├→ FrameQueue → ImuSensor (异步消费，码带解码)
     ├→ bgr2nv12 → NV12
@@ -90,7 +89,7 @@ Cherry 不走上述 MJPEG/MPP 管线：`V4L2 H264 → FIFO → ffmpeg stream-cop
 
 ### 设备匹配
 
-摄像头由 `discover_cameras()` 调用 Nori Xvision 枚举。JHH04（`1bcf:2d51`）确定 SixCam 所在 USB bus，JHH02（`1bcf:2d50`）在同一 bus 上匹配；其余 `1bcf:2d50` 设备按枚举顺序分配给独立 JHH2 左/右目：
+摄像头由 `discover_cameras()` 调用 V4L2 枚举。JHH04（`1bcf:2d51`）确定 SixCam 所在 USB bus，JHH02（`1bcf:2d50`）在同一 bus 上匹配；其余 `1bcf:2d50` 设备按枚举顺序分配给独立 JHH2 左/右目：
 - **JHH2 双目**: `1bcf:2d50`, 3840×1200@30fps
 - **JHH02 (六目双目侧)**: `1bcf:2d50`, 4000×1200@30fps
 - **JHH04 (六目四目侧)**: `1bcf:2d51`, 3104×480@30fps
@@ -102,7 +101,7 @@ Cherry 不走上述 MJPEG/MPP 管线：`V4L2 H264 → FIFO → ffmpeg stream-cop
 2. 独立 JHH2 左/右目等待 JHH02 完成后并行启流。
 3. SixCam JHH04 等待 JHH02 与独立 JHH2 完成启流。
 
-`VideoCaptureControl` 管理该硬件依赖；Nori Xvision SDK 支持多路并发启动，无需全局互斥锁。
+`VideoCaptureControl` 管理该硬件依赖；V4L2 支持多路并发启动，无需全局互斥锁。
 
 ### 运行模式
 
@@ -139,7 +138,7 @@ Cherry 输出位于 `session_001/cherry_stereo/`：`cherry_stereo.mkv`、`video_
 
 ### 关键依赖（仅 RK3588 板端可用）
 
-- **Nori Xvision SDK v10.00.09** (`Nori_Xvision_API.h`, `libNori_Xvision_Std`) — USB3 Vision 驱动，安装在 `/usr/local/Nori_Xvision/`
+- **Linux UVC 驱动 (V4L2)** — 摄像头经内核 UVC 驱动通过 V4L2 接口获取，无需外部 SDK
 - **Rockchip MPP** (`librockchip_mpp`) — H.265 硬件编码
 - **libturbojpeg** — MJPEG 解码
 - **libgpiod** — GPIO 按键
@@ -153,7 +152,7 @@ Cherry 输出位于 `session_001/cherry_stereo/`：`cherry_stereo.mkv`、`video_
 - 使用 MKV 容器封装 H.265 视频流
 - Socket 通信合入主线程 poll() 而非独立线程
 - Preview JPEG 在 sensor collect 循环中按需导出，不创建额外线程
-- 2026-07-27 从 TSTC USBCam_API v1.0.0 迁移到 Nori Xvision SDK v10.00.09（解决多 Session 死锁，简化启流模型）
+- 采集接入迁移：TSTC USBCam_API v1.0.0 → Nori Xvision SDK v10.00.09（2026-07-27，解决多 Session 死锁）→ UVC/V4L2（当前，经内核 UVC 驱动获取帧，无外部 SDK）
 
 ## 注意事项
 
