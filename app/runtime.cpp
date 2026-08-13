@@ -202,6 +202,24 @@ int Runtime::run() {
         gpio_available = gpio.open();
     }
 
+    // 空闲时重新枚举 USB 设备，反映运行时热插拔。discover_cameras 会向 stdout
+    // 打印枚举日志，临时重定向到 /dev/null 避免前端轮询 status 时刷屏 journal。
+    auto rescan_cameras = [&]() {
+        const int saved_stdout = dup(STDOUT_FILENO);
+        const int null_fd = open("/dev/null", O_WRONLY);
+        if (saved_stdout >= 0 && null_fd >= 0) {
+            dup2(null_fd, STDOUT_FILENO);
+        }
+        cameras = discover_cameras(configuration);
+        if (saved_stdout >= 0) {
+            dup2(saved_stdout, STDOUT_FILENO);
+            close(saved_stdout);
+        }
+        if (null_fd >= 0) {
+            close(null_fd);
+        }
+    };
+
     auto handle_socket_command = [&](const SocketCommand& command) {
         if (command.kind == SocketCommandKind::start) {
             if (!ready) {
@@ -211,6 +229,9 @@ int Runtime::run() {
                 return std::string(
                     "{\"ok\":false,\"error\":\"already running\"}");
             }
+            // 录制前重新枚举设备，让本次 session 使用最新的设备路径
+            rescan_cameras();
+            sessions.refresh_cameras(cameras);
             target_start_time_ = ceil_to_next_second();
             return std::string("{\"ok\":true}");
         }
@@ -249,22 +270,8 @@ int Runtime::run() {
 
         if (command.kind == SocketCommandKind::status) {
             // 空闲时重新扫描 USB 设备，让 status 反映运行时热插拔（拔插相机）。
-            // discover_cameras 会向 stdout 打印枚举日志，临时重定向到 /dev/null，
-            // 避免前端每 3 秒轮询 status 时刷屏 systemd journal。
             if (!session_running_) {
-                const int saved_stdout = dup(STDOUT_FILENO);
-                const int null_fd = open("/dev/null", O_WRONLY);
-                if (saved_stdout >= 0 && null_fd >= 0) {
-                    dup2(null_fd, STDOUT_FILENO);
-                }
-                cameras = discover_cameras(configuration);
-                if (saved_stdout >= 0) {
-                    dup2(saved_stdout, STDOUT_FILENO);
-                    close(saved_stdout);
-                }
-                if (null_fd >= 0) {
-                    close(null_fd);
-                }
+                rescan_cameras();
             }
             CaptureStatusResponse status{
                 std::string(product_profile_name(configuration.profile)),
