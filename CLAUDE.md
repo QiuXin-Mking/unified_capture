@@ -8,6 +8,8 @@ RK3588 统一采集程序。`mango` 保持 2 路 JHH2 独立双目与六目模�
 
 采集方式: **UVC (V4L2)** — 摄像头通过 USB Video Class 协议经 V4L2 从 `/dev/video*` 获取 MJPG/H.264 帧
 
+> **⚠️ 与 device-ui 前端命名映射（易踩坑）**：前端 UI 的「Mango」产品 = 头部 Ego + 左腕 + 右腕，对应**守护进程的 `banana` profile**（腕部 SL/JHHSW + 六目 jhh02/jhh04）。前端选「Mango」时 `product.conf` 必须配 `banana`，而不是 `mango`。守护进程的 `mango` 是 `legacy_head`（只有头部六目，不采集腕部），名字跟前端的「Mango」正好错位。
+
 ## 编译
 
 ```bash
