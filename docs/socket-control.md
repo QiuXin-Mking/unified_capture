@@ -182,6 +182,7 @@ done
 - 「实时预览」不是守护进程的原生能力：`preview` 只在 `running` 时可用，所以上层要先 `start` 一个临时 session，再抽帧，最后 `stop` 并删除该 session。device-ui 用 `<session_dir>/.device-ui-preview` 标记这种临时 session，停止预览时删除、点「录制」时删掉标记「转正」为正式录制（`promote`）。`status.running` 无法区分「预览 session」和「正式录制 session」，上层必须用该标记自己区分——只看到 `running:true` 就把 UI 置为「录制中」是错的。
 - 以 `--single` 启动的守护进程在完成一次 session 后即退出（systemd `Restart=always` 会拉起）。停止预览会触发一次退出+重启，重启的几秒内 socket 不可用，上层轮询要容忍 `unreachable`/超时。
 - `status.cameras[<key>]` 只反映「相机在线」，与「预览/录制是否进行」无关。前端展示相机「在线/离线」时，`connected` 应只看 `cameras[<key>]`，不要与 `liveActive`（previewing/recording）绑定——否则停止预览后 `liveActive=false` 会把在线的相机误显示为「无信号」。预览帧（`<img src>`）的显示才由 `liveActive` 控制。
+- `cameras` 的 key 是**固定名**（见上表：`jhh02`/`jhh04`/`wrist_left`/`wrist_right`/`jhh2_left`/`jhh2_right`）。前端判断某路在线时必须用这些实际 key，不要用 `four`/`quad`/`ego_h_four`/`head_four` 之类自造名称——否则 `cameras[key]` 取不到值，会把在线相机误判为「离线」。
 
 ## 相关文件
 
