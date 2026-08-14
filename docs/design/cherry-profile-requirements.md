@@ -10,14 +10,14 @@
 
 | 维度 | mango | banana | **cherry** |
 |------|-------|--------|------------|
-| 主相机 | JHH2 独立双目 (Nori) | 腕部单目 (V4L2 MJPEG) | **YCTC SC233HGS 双目 (UVC H.264)** |
-| 视频协议 | Nori Xvision SDK | V4L2 MJPEG | **V4L2 H.264 (UVC)** |
+| 主相机 | 六目 JHH02/JHH04 + 腕部单目 | JHH2 独立双目 | **YCTC SC233HGS 双目 (UVC H.264)** |
+| 视频协议 | V4L2 MJPEG | V4L2 MJPEG | **V4L2 H.264 (UVC)** |
 | IMU 来源 | BGR 码带解码 | BGR 码带解码 | **CDC ACM 串口协议** |
 | MAG 来源 | 无 | 无 | **CDC ACM 串口协议** |
-| 腕部相机 | 无 | V4L2 MJPEG | **YCTC SC233HGS 同平台 (预留)** |
-| AS5600 | 有 | 无 | **无** |
-| VIVE | 有 | 无 | **无** |
-| Y8 输出 | 有 | 无 | **无** |
+| 腕部相机 | V4L2 MJPEG | 无 | **YCTC SC233HGS 同平台 (预留)** |
+| AS5600 | 无 | 有 | **无** |
+| VIVE | 无 | 有 | **无** |
+| Y8 输出 | 无 | 有 | **无** |
 
 ## 2. 硬件规格
 

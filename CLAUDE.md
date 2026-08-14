@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-RK3588 统一采集程序。`mango` 保持 2 路 JHH2 独立双目与六目模组；`banana` 为左、右腕部单目，输出 H.265 MKV 和异步 IMU JSONL；`cherry` 为 YCTC SC233HGS 双目，直通 UVC H.264 并采集 CDC ACM IMU/MAG/FRAME_META。banana 与 cherry 均不输出 Y8。目标平台为 RK3588 ARM64 板端。
+RK3588 统一采集程序。`mango` 采集六目模组（JHH02/JHH04）与左、右腕部单目，输出 H.265 MKV 和异步 IMU JSONL；`banana` 保持 2 路 JHH2 独立双目与六目模组（含 AS5600/VIVE）；`cherry` 为 YCTC SC233HGS 双目，直通 UVC H.264 并采集 CDC ACM IMU/MAG/FRAME_META。mango 与 cherry 均不输出 Y8。目标平台为 RK3588 ARM64 板端。
 
 采集方式: **UVC (V4L2)** — 摄像头通过 USB Video Class 协议经 V4L2 从 `/dev/video*` 获取 MJPG/H.264 帧
 
-> **⚠️ 与 device-ui 前端命名映射（易踩坑）**：前端 UI 的「Mango」产品 = 头部 Ego + 左腕 + 右腕，对应**守护进程的 `banana` profile**（腕部 SL/JHHSW + 六目 jhh02/jhh04）。前端选「Mango」时 `product.conf` 必须配 `banana`，而不是 `mango`。守护进程的 `mango` 是 `legacy_head`（只有头部六目，不采集腕部），名字跟前端的「Mango」正好错位。
+> **命名已对齐**：前端 UI 的「Mango」产品 = 头部 Ego + 左腕 + 右腕，对应**守护进程的 `mango` profile**（六目 jhh02/jhh04 + 腕部 SL/JHHSW）。守护进程的 `banana` 是 legacy 头部方案（2 路 JHH2 独立双目 + 六目 + AS5600 + VIVE）。
 
 ## 编译
 

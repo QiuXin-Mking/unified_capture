@@ -1,6 +1,6 @@
 # unified_capture
 
-RK3588 统一采集程序。`mango` 保持原有 JHH2 独立双目与六目模组；`banana` 采集左、右腕部单目；`cherry` 采集 YCTC SC233HGS 双目模组的 UVC H.264 与 CDC ACM 串口传感器流。
+RK3588 统一采集程序。`mango` 采集六目模组（JHH02/JHH04）与左、右腕部单目；`banana` 保持原有 JHH2 独立双目与六目模组（含 AS5600/VIVE）；`cherry` 采集 YCTC SC233HGS 双目模组的 UVC H.264 与 CDC ACM 串口传感器流。
 
 ## 硬件
 
@@ -12,8 +12,8 @@ RK3588 统一采集程序。`mango` 保持原有 JHH2 独立双目与六目模�
 | SixCam JHH04（四目） | 1bcf:2d51 | 3104×480 | 30fps | `.y8` + IMU JSONL |
 | AS5600 编码器 | I2C 0x36 | — | 100Hz | JSONL |
 | VIVE Tracker 3.0 | USB HID | — | — | pose JSONL |
-| banana 左腕 | Nori `SL`（可配置） | 1440×960 | 30fps | H.265 MKV + IMU JSONL（无 Y8） |
-| banana 右腕 | Nori `JHHSW`（可配置） | 1440×960 | 30fps | H.265 MKV + IMU JSONL（无 Y8） |
+| mango 左腕 | Nori `SL`（可配置） | 1440×960 | 30fps | H.265 MKV + IMU JSONL（无 Y8） |
+| mango 右腕 | Nori `JHHSW`（可配置） | 1440×960 | 30fps | H.265 MKV + IMU JSONL（无 Y8） |
 | cherry 双目 | 5268:1218（同 USB 父设备配对 UVC + ttyACM） | 3200×1200 | 30fps | H.264 MKV + IMU/MAG/FRAME_META/视频帧 JSONL（无 Y8） |
 
 Cherry 腕部相机尚未到货，本版本只保留配置字段，不把腕部硬件描述为可用能力。
@@ -50,9 +50,9 @@ cp deploy/product.conf.example /etc/unified_capture/product.conf
 cp deploy/camera-map.conf.example /etc/unified_capture/camera-map.conf
 ```
 
-`product.conf` 可选择 `mango`、`banana` 或 `cherry`。`camera-map.conf` 的 `[cherry]` 段固定要求 `5268:1218`、`3200x1200`、`H264`、30 fps；发现逻辑通过同一 sysfs USB device 父路径配对 `/dev/videoN` 与 `/dev/ttyACM*`，不会仅凭 bus number 配对。初始 banana 映射为左腕 `SL`、右腕 `JHHSW`，可按硬件修改。banana 的 `allow_missing_devices=true` 表示缺失一侧或两侧时服务仍会就绪，`status` 返回 `"degraded":true`，并允许 `start`/`stop`。配置错误仍会阻止服务启动。
+`product.conf` 可选择 `mango`、`banana` 或 `cherry`。`camera-map.conf` 的 `[cherry]` 段固定要求 `5268:1218`、`3200x1200`、`H264`、30 fps；发现逻辑通过同一 sysfs USB device 父路径配对 `/dev/videoN` 与 `/dev/ttyACM*`，不会仅凭 bus number 配对。初始 mango 映射为左腕 `SL`、右腕 `JHHSW`，可按硬件修改。mango 的 `allow_missing_devices=true` 表示缺失一侧或两侧时服务仍会就绪，`status` 返回 `"degraded":true`，并允许 `start`/`stop`。配置错误仍会阻止服务启动。
 
-banana 固定输出 H.265 MKV 与从视频帧异步解码的 IMU JSONL，不生成 `.y8`，也不启动 AS5600 或 VIVE。腕部是否暴露麦克风及其 USB 音频身份、声道、采样率和左右关联仍是待确认事项；本版本不枚举、录制或封装音频。
+mango 固定输出 H.265 MKV 与从视频帧异步解码的 IMU JSONL，不生成 `.y8`，也不启动 AS5600 或 VIVE。腕部是否暴露麦克风及其 USB 音频身份、声道、采样率和左右关联仍是待确认事项；本版本不枚举、录制或封装音频。
 
 cherry 将相机已编码的 H.264 access unit 直接交给 FFmpeg remux 为 MKV，不做 JPEG 解码或 MPP 二次编码；串口独立输出 IMU、MAG 与 FRAME_META。FRAME_META 依赖板端 GPIO 帧同步脉冲接线，未接线时 `frame_meta.jsonl` 可以是合法空文件，但 MKV、IMU 和 MAG 仍是必需产物。
 
@@ -97,7 +97,7 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，纯文本协议，每�
 echo "status" | nc -U /tmp/unified_capture.sock
 # → {"ok":true,"ready":true,"running":false,"cameras":{"jhh2_left":true,...}}
 
-# banana: {"product":"banana","degraded":false,"cameras":{"wrist_left":true,"wrist_right":true},...}
+# mango: {"product":"mango","degraded":false,"cameras":{"wrist_left":true,"wrist_right":true},...}
 
 # 开始采集
 echo "start" | nc -U /tmp/unified_capture.sock
@@ -122,9 +122,11 @@ systemctl start unified_capture
 
 ## 输出数据结构
 
-banana 的每次 session 仅创建已发现的 `wrist_left/`、`wrist_right/` 目录；每个目录包含 `*.mkv`（HEVC）与 `*.jsonl`（异步 IMU），不包含 `.y8`。板端验收见 [tests/README.md](tests/README.md)。
+mango 的每次 session 创建 `jhh02/`、`jhh04/`、`wrist_left/`、`wrist_right/` 目录；每个目录包含 `*.mkv`（HEVC）与 `*.jsonl`（异步 IMU），不包含 `.y8`。详见 [docs/mango-device-overview.md](docs/mango-device-overview.md)。
 
 cherry 的每次 session 创建 `cherry_stereo/`，其中包含 `cherry_stereo.mkv`（H.264 3200×1200@30）、`video_frames.jsonl`、`imu.jsonl`、`mag.jsonl` 与 `frame_meta.jsonl`，不包含 `.y8`。同步分析使用 `python3 deploy/calc_cherry_sync.py <session_dir>`。
+
+banana（legacy 头部）的每次 session 创建 `jhh2_left/`、`jhh2_right/`、`jhh02/`、`jhh04/` 目录，外加顶层 `encoder-<timestamp>.jsonl`、`tracker_raw.jsonl` 与 `tracker.jsonl`：
 
 ```
 /media/usb0/capture/experiment_001/

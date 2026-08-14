@@ -60,7 +60,7 @@ status\n
 ```json
 {
   "ok": true,
-  "product": "banana",
+  "product": "mango",
   "ready": true,
   "degraded": false,
   "running": false,
@@ -171,8 +171,8 @@ reboot\n
 
 | profile | `cameras` 的 key |
 |---------|------------------|
-| `mango`（legacy_head） | `jhh02`、`jhh04`、`jhh2_left`、`jhh2_right` |
-| `banana`（腕部+六目） | `jhh02`、`jhh04`、`wrist_left`、`wrist_right` |
+| `mango`（六目+腕部） | `jhh02`、`jhh04`、`wrist_left`、`wrist_right` |
+| `banana`（legacy_head） | `jhh02`、`jhh04`、`jhh2_left`、`jhh2_right` |
 | `cherry` | `cherry_stereo` |
 
 - key 是**固定名**，value 是 boolean（该路相机是否在线）。
@@ -214,17 +214,17 @@ reboot\n
 
 采集结果写在 `<输出前缀>/session_NNN/`（`NNN` 从 001 递增，重启后从已有最大值 +1 继续）。
 
-`banana` profile 的 session 目录：
+`mango` profile 的 session 目录：
 
 ```
 /media/usb0/capture/session_050/
 ├── jhh02/         → jhh02-<时间戳>.mkv（H.265）+ jhh02-<时间戳>.jsonl（IMU）
 ├── jhh04/         → jhh04-<时间戳>.jsonl（IMU）
 ├── wrist_left/    → wrist_left-<时间戳>.mkv + wrist_left-<时间戳>.jsonl
-├── wrist_right/   → wrist_right-<时间戳>.mkv + wrist_right-<时间戳>.jsonl
-├── encoder.jsonl  → AS5600 编码器（若启用）
-└── tracker.jsonl  → VIVE 姿态（若启用）
+└── wrist_right/   → wrist_right-<时间戳>.mkv + wrist_right-<时间戳>.jsonl
 ```
+
+`banana`（legacy 头部）profile 额外在顶层输出 `encoder-<时间戳>.jsonl`（AS5600）与 `tracker*.jsonl`（VIVE），目录含 `jhh2_left/`、`jhh2_right/`、`jhh02/`、`jhh04/`。
 
 - 时间戳格式：`YYYYMMDD-HH_MM_SS`。
 - 各相机的文件只在其在线时产生；某路相机缺失/离线时，对应子目录不创建。

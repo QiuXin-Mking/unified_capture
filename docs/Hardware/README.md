@@ -20,7 +20,7 @@
 | 磁编码器 | AS5600；I2C `0x36` | I2C | 已在项目中实现；待确认（本轮实物／接线） | [05-AS5600磁编码器](05-AS5600磁编码器.md) |
 | 姿态追踪器 | VIVE Tracker 3.0；`28de:2300` | USB HID（由 libsurvive 使用 libusb） | 已在项目中实现；已板端验收（短时采样）；待确认（长期稳定性） | [06-VIVE-Tracker](06-VIVE-Tracker.md) |
 
-矩阵依据：根目录 `README.md` 的硬件表与运行说明；`deploy/camera-map.conf.example` 的 cherry、banana 映射；Cherry 的 2026-08-03 RK3588 端到端验收记录见 `docs/design/cherry-profile-board-validation.md`；`docs/TODO.md` 的腕部板端验收与 V4L2 待验收项；Tracker 的短时采样记录见 `docs/2026-07-27-hardware-migration-sampling-validation.md`。其中 VIVE 的 `28de:2300` 来自 `hardware/tracker/vive_usb.h`。
+矩阵依据：根目录 `README.md` 的硬件表与运行说明；`deploy/camera-map.conf.example` 的 cherry、mango 映射；Cherry 的 2026-08-03 RK3588 端到端验收记录见 `docs/design/cherry-profile-board-validation.md`；`docs/TODO.md` 的腕部板端验收与 V4L2 待验收项；Tracker 的短时采样记录见 `docs/2026-07-27-hardware-migration-sampling-validation.md`。其中 VIVE 的 `28de:2300` 来自 `hardware/tracker/vive_usb.h`。
 
 ## 跨设备待确认
 

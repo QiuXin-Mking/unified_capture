@@ -1,17 +1,17 @@
 # 待办
 
-以下内容不属于本次已提交的 banana 腕部采集主链路，保留到后续硬件条件具备时处理。
+以下内容不属于本次已提交的 mango 腕部采集主链路，保留到后续硬件条件具备时处理。
 
 ## V4L2 迁移端到端验证 (2026-07-29)
 
 - 已完成 Nori Xvision SDK → 纯 Linux V4L2/UVC 代码迁移（14 文件 + 1 新文件 `v4l2_device.h`）。
 - **未在 RK3588 板端编译或运行**，仅在 macOS 上完成逻辑替换。
-- 需在板端依次验证：编译 → `--scan` 发现 → 单路 JHH2 → SixCam → Mango 全量 → Banana → 多 Session 稳定性。
+- 需在板端依次验证：编译 → `--scan` 发现 → 单路 JHH2 → SixCam → Banana → Mango 全量 → 多 Session 稳定性。
 
 ## 板端验收
 
 - ✅ 在 RK3588 (LubanCat-4) 上以 Nori SDK v10.00.09、Rockchip MPP 1.5.0 与 libsurvive 完整编译 `unified_capture`。
-- ✅ 安装 `deploy/product.conf.example` 和 `deploy/camera-map.conf.example` 后，通过 `test_banana_wrist_socket.sh` (CASE=two) 验证双腕场景。
+- ✅ 安装 `deploy/product.conf.example` 和 `deploy/camera-map.conf.example` 后，通过 `test_mango_wrist_socket.sh` (CASE=two) 验证双腕场景。
 - ✅ `SL`、`JHHSW` iProduct 匹配正确（`1bcf:2d52` 相机）。
 - ✅ IMU 解码正常：腕部码带位于顶部行（横向，和 JHH2 一样），`ImuOrientation::HORIZONTAL_TOP`。
   - 左腕: 550 IMU 样本 (103KB)、右腕: 638 IMU 样本 (118KB)，3 秒采集。

@@ -108,12 +108,31 @@ status\n
 
 | profile | `cameras` 的 key |
 |---------|------------------|
-| `mango`（legacy_head） | `jhh02`、`jhh04`、`jhh2_left`、`jhh2_right` |
-| `banana`（腕部+六目） | `jhh02`、`jhh04`、`wrist_left`、`wrist_right` |
+| `mango`（六目+腕部） | `jhh02`、`jhh04`、`wrist_left`、`wrist_right` |
+| `banana`（legacy_head） | `jhh02`、`jhh04`、`jhh2_left`、`jhh2_right` |
 
-> **注意**：device-ui 前端的「Mango」产品对应这里的 `banana` profile（命名错位见 `CLAUDE.md`）。UI 的 `wrist-left`/`wrist-right` 预览通道依赖 `banana` 下 `wrist_left`/`wrist_right` 两个 key 出现。
+> **注意**：device-ui 前端的「Mango」产品对应这里的 `mango` profile。UI 的 `wrist-left`/`wrist-right` 预览通道依赖 `mango` 下 `wrist_left`/`wrist_right` 两个 key 出现。
 
 `status` 在**空闲（非录制）时会重新扫描 USB 设备**（`discover_cameras`，枚举日志重定向到 `/dev/null`），因此 `cameras` 反映运行时热插拔——拔插相机后，下一次 `status` 就能拿到最新的在线/离线状态。录制进行中不重扫（避免打开正在采流的设备）。
+
+### `set_product:<profile>`
+
+```text
+set_product:banana\n
+```
+
+`<profile>` ∈ `mango` | `banana` | `cherry`。
+
+| 条件 | 响应 | 含义 |
+|------|------|------|
+| 空闲且成功 | `{"ok":true,"product":"banana"}` | 已切换并持久化到 `product.conf` |
+| 采集中 | `{"ok":false,"error":"busy"}` | session 运行中，拒绝切换 |
+| 未知 profile | `{"ok":false,"error":"unknown product"}` | 非法产品名 |
+| 目标无相机/配置错 | `{"ok":false,"error":"..."}` | 切换失败，旧产品保持不变 |
+
+切换只在**空闲态**（`session_running == false`）生效：重新加载目标 profile 的 camera-map、重新枚举相机、校验该 profile 的相机要求，全部成功后才原子写回 `/etc/unified_capture/product.conf` 并替换运行态（configuration/cameras/sensor_status/session_options 与 SessionRunner 的相机与选项）。任何一步失败都不会改写 product.conf，也不会改变当前运行态。切换成功后 `status` 的 `product` 与 `cameras` key 集合立即反映新 profile，进程不重启。
+
+> 命名已对齐：device-ui 前端「Mango」→ `mango`、「Banana」→ `banana`。守护进程只认 `mango`/`banana`/`cherry`。
 
 ### `preview:<channel>:<path>` 与 `preview:<path>`
 
