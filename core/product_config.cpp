@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <limits>
 #include <map>
@@ -312,31 +313,25 @@ std::string_view product_profile_name(ProductProfile profile) {
     return "";
 }
 
-ProductConfigResult load_product_configuration(
-    const std::string& product_config_path,
+ProductConfigResult load_product_configuration_for_profile(
+    ProductProfile profile,
     const std::string& camera_map_path) {
-    ProductProfile profile;
-    ProductConfigResult result = load_product_profile(product_config_path, &profile);
-    if (!result.error.empty()) {
-        return result;
-    }
-
     CameraMap map;
-    result = load_camera_map(camera_map_path, &map);
+    ProductConfigResult result = load_camera_map(camera_map_path, &map);
     if (!result.error.empty()) {
         return result;
     }
 
     ProductConfiguration configuration;
     configuration.profile = profile;
-    if (profile == ProductProfile::banana) {
-        const auto banana = map.find("banana");
-        if (banana == map.end()) {
-            return error_result("missing camera-map section: banana");
+    if (profile == ProductProfile::mango) {
+        const auto mango = map.find("mango");
+        if (mango == map.end()) {
+            return error_result("missing camera-map section: mango");
         }
 
         std::string allow_missing_devices;
-        result = required_value(banana->second, "allow_missing_devices",
+        result = required_value(mango->second, "allow_missing_devices",
                                 &allow_missing_devices);
         if (!result.error.empty()) {
             return result;
@@ -349,20 +344,20 @@ ProductConfigResult load_product_configuration(
             return error_result("allow_missing_devices must be true or false");
         }
 
-        result = required_value(banana->second, "wrist_left.product",
+        result = required_value(mango->second, "wrist_left.product",
                                 &configuration.wrist.left_product);
         if (!result.error.empty()) {
             return result;
         }
-        result = required_value(banana->second, "wrist_right.product",
+        result = required_value(mango->second, "wrist_right.product",
                                 &configuration.wrist.right_product);
         if (!result.error.empty()) {
             return result;
         }
 
         // sixcam (optional, default false)
-        auto sixcam = banana->second.find("sixcam.enabled");
-        if (sixcam != banana->second.end()) {
+        auto sixcam = mango->second.find("sixcam.enabled");
+        if (sixcam != mango->second.end()) {
             if (sixcam->second == "true") {
                 configuration.sixcam_enabled = true;
             } else if (sixcam->second != "false") {
@@ -381,4 +376,47 @@ ProductConfigResult load_product_configuration(
     }
 
     return ProductConfigResult{configuration, ""};
+}
+
+ProductConfigResult load_product_configuration(
+    const std::string& product_config_path,
+    const std::string& camera_map_path) {
+    ProductProfile profile;
+    ProductConfigResult result = load_product_profile(product_config_path, &profile);
+    if (!result.error.empty()) {
+        return result;
+    }
+    return load_product_configuration_for_profile(profile, camera_map_path);
+}
+
+std::optional<ProductProfile> parse_product_profile(std::string_view value) {
+    if (value == "mango") {
+        return ProductProfile::mango;
+    }
+    if (value == "banana") {
+        return ProductProfile::banana;
+    }
+    if (value == "cherry") {
+        return ProductProfile::cherry;
+    }
+    return std::nullopt;
+}
+
+bool write_product_profile(const std::string& path, ProductProfile profile) {
+    const std::string temporary_path = path + ".tmp";
+    {
+        std::ofstream output(temporary_path, std::ios::trunc);
+        if (!output) {
+            return false;
+        }
+        output << "product=" << product_profile_name(profile) << '\n';
+        if (!output) {
+            return false;
+        }
+    }
+    if (std::rename(temporary_path.c_str(), path.c_str()) != 0) {
+        std::remove(temporary_path.c_str());
+        return false;
+    }
+    return true;
 }

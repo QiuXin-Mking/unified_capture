@@ -15,32 +15,32 @@ CameraSlot enabled_slot(const char* name) {
 }  // namespace
 
 int main() {
-    CameraDiscoveryResult partial_banana;
-    partial_banana.profile = ProductProfile::banana;
-    partial_banana.wrist[0] = enabled_slot("wrist_left");
+    CameraDiscoveryResult partial_mango;
+    partial_mango.profile = ProductProfile::mango;
+    partial_mango.wrist[0] = enabled_slot("wrist_left");
     const std::vector<CameraSlot> partial =
-        active_profile_cameras(partial_banana);
+        active_profile_cameras(partial_mango);
     assert(partial.size() == 1);
     assert(std::string(partial[0].config.name) == "wrist_left");
-    assert(profile_cameras_json(partial_banana) ==
+    assert(profile_cameras_json(partial_mango) ==
            "\"cameras\":{\"wrist_left\":true,\"wrist_right\":false}");
 
-    CameraDiscoveryResult empty_banana;
-    empty_banana.profile = ProductProfile::banana;
-    assert(active_profile_cameras(empty_banana).empty());
-    assert(profile_cameras_json(empty_banana) ==
+    CameraDiscoveryResult empty_mango;
+    empty_mango.profile = ProductProfile::mango;
+    assert(active_profile_cameras(empty_mango).empty());
+    assert(profile_cameras_json(empty_mango) ==
            "\"cameras\":{\"wrist_left\":false,\"wrist_right\":false}");
 
-    CameraDiscoveryResult mango;
-    mango.profile = ProductProfile::mango;
-    mango.jhh2[0] = enabled_slot("jhh2_left");
-    mango.wrist[0] = enabled_slot("wrist_left");
-    const std::vector<CameraSlot> mango_cameras =
-        active_profile_cameras(mango);
-    assert(mango_cameras.size() == 1);
-    assert(std::string(mango_cameras[0].config.name) == "jhh2_left");
-    mango.sixcam.enabled = true;
-    assert(profile_session_directories(mango) ==
+    CameraDiscoveryResult banana;
+    banana.profile = ProductProfile::banana;
+    banana.jhh2[0] = enabled_slot("jhh2_left");
+    banana.wrist[0] = enabled_slot("wrist_left");
+    const std::vector<CameraSlot> banana_cameras =
+        active_profile_cameras(banana);
+    assert(banana_cameras.size() == 1);
+    assert(std::string(banana_cameras[0].config.name) == "jhh2_left");
+    banana.sixcam.enabled = true;
+    assert(profile_session_directories(banana) ==
            std::vector<std::string>({"jhh2_left", "jhh04", "jhh02"}));
 
     CameraDiscoveryResult empty_cherry;

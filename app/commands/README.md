@@ -13,6 +13,7 @@
 | `start` | `SocketCommandKind::start` | 无 | 启动采集 |
 | `stop` | `SocketCommandKind::stop` | 无 | 停止采集 |
 | `status` | `SocketCommandKind::status` | 无 | 查询状态 |
+| `set_product:<profile>` | `SocketCommandKind::set_product` | `product` | 热切换产品 profile（mango/banana/cherry） |
 | `preview:<path>` | `SocketCommandKind::preview` | `preview_path` | 导出预览帧 |
 
 ## 如何新增命令字

@@ -148,9 +148,9 @@ build/tests/test_capture_output_policy: tests/test_capture_output_policy.cpp
 test_socket_command: build/tests/test_socket_command
 	./$<
 
-build/tests/test_socket_command: tests/test_socket_command.cpp app/socket_server.h app/socket_server.cpp
+build/tests/test_socket_command: tests/test_socket_command.cpp app/socket_server.h app/socket_server.cpp core/product_config.h core/product_config.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_socket_command.cpp app/socket_server.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ tests/test_socket_command.cpp app/socket_server.cpp core/product_config.cpp
 
 test_compressed_frame_queue: build/tests/test_compressed_frame_queue
 	./$<

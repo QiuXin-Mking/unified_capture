@@ -8,12 +8,8 @@ stereo.format=H264
 stereo.fps=30
 allow_missing_devices=true
 
-[banana]
+[mango]
 allow_missing_devices=true
 wrist_left.product=SL
 wrist_right.product=JHHSW
 sixcam.enabled=true
-head.enabled=false
-
-[mango]
-profile=legacy_head

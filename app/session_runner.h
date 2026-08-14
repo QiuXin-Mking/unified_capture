@@ -34,6 +34,7 @@ public:
     void wait_teardown();
     std::string cameras_json() const;
     void refresh_cameras(const CameraDiscoveryResult& cameras);
+    void refresh_options(SessionOptions options);
     void request_preview(std::string channel, std::string path);
 
 private:

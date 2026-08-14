@@ -94,7 +94,7 @@ void SessionRunner::run(const std::string& session_dir,
                 }
             }
         }
-    } else if (cameras_.profile == ProductProfile::banana) {
+    } else if (cameras_.profile == ProductProfile::mango) {
         const bool has_sixcam =
             cameras_.sixcam.enabled &&
             !cameras_.sixcam.jhh04_path.empty() &&
@@ -134,7 +134,7 @@ void SessionRunner::run(const std::string& session_dir,
         for (const CameraSlot& camera : active_profile_cameras(cameras_)) {
             CameraConfig config = camera.config;
             const CameraOutputPolicy policy =
-                banana_camera_output_policy(config.name);
+                mango_camera_output_policy(config.name);
             config.output_h265 = policy.output_h265;
             config.output_y8 = policy.output_y8;
             auto video = std::make_unique<VideoSensor>(
@@ -265,6 +265,10 @@ std::string SessionRunner::cameras_json() const {
 
 void SessionRunner::refresh_cameras(const CameraDiscoveryResult& cameras) {
     cameras_ = cameras;
+}
+
+void SessionRunner::refresh_options(SessionOptions options) {
+    options_ = options;
 }
 
 void SessionRunner::request_preview(std::string channel, std::string path) {

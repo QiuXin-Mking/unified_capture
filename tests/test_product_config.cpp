@@ -10,7 +10,7 @@ int main() {
     const ProductConfigResult shipped_default = load_product_configuration(
         "deploy/product.conf.example", "deploy/camera-map.conf.example");
     assert(shipped_default.configuration.has_value());
-    assert(shipped_default.configuration->profile == ProductProfile::banana);
+    assert(shipped_default.configuration->profile == ProductProfile::mango);
 
     const auto directory = std::filesystem::temp_directory_path() /
                            ("unified_capture_product_config_" +
@@ -25,28 +25,55 @@ int main() {
     {
         std::ofstream output(product_config);
         output << "# product.conf\n"
-               << "product=banana\n";
+               << "product=mango\n";
     }
     {
         std::ofstream output(camera_map);
         output << "# camera-map.conf\n"
-               << "[banana]\n"
+               << "[mango]\n"
                << "allow_missing_devices=true\n"
                << "wrist_left.product=SL\n"
                << "wrist_right.product=JHHSW\n"
-               << "head.enabled=false\n\n"
-               << "[mango]\n"
-               << "profile=legacy_head\n";
+               << "sixcam.enabled=true\n";
     }
 
     const ProductConfigResult parsed =
         load_product_configuration(product_config.string(), camera_map.string());
     assert(parsed.configuration.has_value());
-    assert(parsed.configuration->profile == ProductProfile::banana);
+    assert(parsed.configuration->profile == ProductProfile::mango);
     assert(parsed.configuration->wrist.allow_missing_devices);
     assert(parsed.configuration->wrist.left_product == "SL");
     assert(parsed.configuration->wrist.right_product == "JHHSW");
+    assert(parsed.configuration->sixcam_enabled);
     assert(product_profile_name(ProductProfile::cherry) == "cherry");
+
+    // parse_product_profile maps valid names and rejects unknowns.
+    assert(parse_product_profile("mango") == ProductProfile::mango);
+    assert(parse_product_profile("banana") == ProductProfile::banana);
+    assert(parse_product_profile("cherry") == ProductProfile::cherry);
+    assert(!parse_product_profile("pear").has_value());
+    assert(!parse_product_profile("").has_value());
+
+    // load_product_configuration_for_profile builds config without a product.conf.
+    const ProductConfigResult mango_by_profile =
+        load_product_configuration_for_profile(ProductProfile::mango,
+                                               camera_map.string());
+    assert(mango_by_profile.configuration.has_value());
+    assert(mango_by_profile.configuration->profile == ProductProfile::mango);
+    assert(mango_by_profile.configuration->wrist.left_product == "SL");
+
+    // write_product_profile persists atomically and reads back as the new profile.
+    assert(write_product_profile(product_config.string(), ProductProfile::banana));
+    {
+        std::ifstream input(product_config);
+        std::string line;
+        std::getline(input, line);
+        assert(line == "product=banana");
+    }
+    const ProductConfigResult banana_reloaded =
+        load_product_configuration(product_config.string(), camera_map.string());
+    assert(banana_reloaded.configuration.has_value());
+    assert(banana_reloaded.configuration->profile == ProductProfile::banana);
 
     {
         std::ofstream output(product_config);
@@ -59,11 +86,11 @@ int main() {
 
     {
         std::ofstream output(product_config);
-        output << "product=banana\n";
+        output << "product=mango\n";
     }
     {
         std::ofstream output(camera_map);
-        output << "[banana]\n"
+        output << "[mango]\n"
                << "allow_missing_devices=true\n"
                << "wrist_left.product=SL\n";
     }

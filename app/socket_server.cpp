@@ -1,5 +1,7 @@
 #include "app/socket_server.h"
 
+#include "core/product_config.h"
+
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -33,6 +35,16 @@ SocketCommand parse_socket_command(std::string_view request) {
     }
     if (request == "status") {
         return {SocketCommandKind::status, {}, {}};
+    }
+
+    constexpr std::string_view set_product_prefix = "set_product:";
+    if (request.starts_with(set_product_prefix) &&
+        request.size() > set_product_prefix.size()) {
+        const std::string_view product = request.substr(set_product_prefix.size());
+        if (parse_product_profile(product).has_value()) {
+            return {SocketCommandKind::set_product, {}, {}, std::string(product)};
+        }
+        return {SocketCommandKind::unknown, {}, {}};
     }
 
     constexpr std::string_view prefix = "preview:";

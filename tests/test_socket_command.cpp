@@ -26,6 +26,15 @@ int main() {
     }
 
     assert(parse_socket_command("status").kind == SocketCommandKind::status);
+
+    SocketCommand set_product = parse_socket_command("set_product:banana\n");
+    assert(set_product.kind == SocketCommandKind::set_product);
+    assert(set_product.product == "banana");
+    assert(parse_socket_command("set_product:mango").product == "mango");
+    assert(parse_socket_command("set_product:cherry").product == "cherry");
+    assert(parse_socket_command("set_product:kiwi").kind == SocketCommandKind::unknown);
+    assert(parse_socket_command("set_product:").kind == SocketCommandKind::unknown);
+
     assert(parse_socket_command("unknown").kind == SocketCommandKind::unknown);
     assert(parse_socket_command("preview:").kind == SocketCommandKind::unknown);
     assert(parse_socket_command("preview:unknown:/tmp/x.jpg").kind ==

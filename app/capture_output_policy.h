@@ -24,8 +24,8 @@ inline std::string profile_video_option_error(ProductProfile profile,
     if (profile == ProductProfile::cherry) {
         return "cherry H.264 video is mandatory; --no-h265 is unsupported";
     }
-    if (profile == ProductProfile::banana) {
-        return "banana requires H.265 output";
+    if (profile == ProductProfile::mango) {
+        return "mango requires H.265 output";
     }
     return {};
 }
@@ -35,7 +35,7 @@ struct CameraOutputPolicy {
     bool output_y8 = false;
 };
 
-inline CameraOutputPolicy banana_camera_output_policy(std::string_view name) {
+inline CameraOutputPolicy mango_camera_output_policy(std::string_view name) {
     if (name == "wrist_left" || name == "wrist_right" || name == "jhh02") {
         return {true, false};
     }

@@ -29,7 +29,7 @@ std::vector<std::pair<std::string, bool>> status_cameras(
         result.emplace_back("cherry_stereo", cameras.cherry.stereo.enabled);
         return result;
     }
-    if (cameras.profile == ProductProfile::banana) {
+    if (cameras.profile == ProductProfile::mango) {
         result.emplace_back("wrist_left", cameras.wrist[0].enabled);
         result.emplace_back("wrist_right", cameras.wrist[1].enabled);
         if (cameras.sixcam.enabled) {
@@ -68,6 +68,114 @@ std::chrono::steady_clock::time_point ceil_to_next_second() {
     return steady_clock::time_point(secs + seconds(2));
 }
 
+// 构造 {"ok":false,"error":"<escaped>"} 响应，转义控制字符避免非法 JSON。
+std::string make_error_json(const std::string& message) {
+    std::string json = "{\"ok\":false,\"error\":\"";
+    for (char character : message) {
+        switch (character) {
+            case '\\': json += "\\\\"; break;
+            case '"': json += "\\\""; break;
+            case '\n': json += "\\n"; break;
+            case '\r': json += "\\r"; break;
+            case '\t': json += "\\t"; break;
+            default: json += character;
+        }
+    }
+    json += "\"}";
+    return json;
+}
+
+struct ProfileState {
+    ProductConfiguration configuration;
+    CameraDiscoveryResult cameras;
+    CaptureSensorStatus sensor_status;
+    SessionOptions session_options;
+};
+
+// 从一份已加载的 product 配置构建运行态：校验视频选项、枚举相机、校验各
+// profile 的相机要求、推导 IMU/VIVE 能力并生成 session 选项。失败返回 false
+// 并填充 error。IMU 禁用用局部副本，不就地修改 options.use_imu（保证可重入）。
+bool build_profile_state(ProfileState* state,
+                         const ProductConfiguration& configuration,
+                         const RuntimeOptions& options,
+                         std::string* error) {
+    const bool is_mango = configuration.profile == ProductProfile::mango;
+    const bool is_cherry = configuration.profile == ProductProfile::cherry;
+
+    const std::string video_option_error =
+        profile_video_option_error(configuration.profile, options.use_h265);
+    if (!video_option_error.empty()) {
+        *error = video_option_error;
+        return false;
+    }
+
+    CameraDiscoveryResult cameras = discover_cameras(configuration);
+    if (is_cherry &&
+        (!cameras.cherry.stereo.enabled ||
+         cameras.cherry.stereo.device_path.empty() ||
+         cameras.cherry.serial_path.empty())) {
+        *error = "cherry requires one paired H.264 video and serial device";
+        for (const std::string& message : cameras.camera_errors) {
+            *error += std::string("\n  ") + message;
+        }
+        return false;
+    }
+    if (!is_mango && !is_cherry && cameras.active_count <= 0) {
+        *error = "No cameras";
+        return false;
+    }
+    if (is_mango && !configuration.wrist.allow_missing_devices) {
+        int expected = static_cast<int>(cameras.wrist.size());
+        if (configuration.sixcam_enabled) expected += 2;
+        if (cameras.active_count != expected) {
+            *error = "mango requires all devices (wrist x2 + sixcam)";
+            for (const std::string& message : cameras.camera_errors) {
+                *error += std::string("\n  ") + message;
+            }
+            return false;
+        }
+    }
+
+    bool use_imu = options.use_imu;
+    if (is_mango && use_imu) {
+        bool any_imu = false;
+        for (const auto& cam : cameras.wrist) {
+            if (cam.enabled && cam.config.has_imu) any_imu = true;
+        }
+        if (!any_imu) {
+            use_imu = false;
+            printf("[imu] wrist cameras have no IMU, IMU disabled\n");
+        }
+    }
+
+    bool use_vive = false;
+    if (is_cherry) {
+        printf("[vive] cherry profile, VIVE disabled\n");
+    } else if (is_mango) {
+        printf("[vive] mango profile, VIVE disabled\n");
+    } else {
+        int vive_count = detect_vive_trackers();
+        use_vive = vive_count > 0;
+        if (!use_vive) {
+            printf("[vive] no tracker detected, VIVE disabled\n");
+        } else {
+            printf("[vive] %d tracker(s) detected, VIVE enabled\n", vive_count);
+        }
+    }
+
+    const CaptureSensorStatus sensor_status = capture_sensor_status(
+        configuration.profile, use_imu, options.use_as5600, use_vive);
+    SessionOptions session_options{
+        sensor_status.imu, sensor_status.as5600, sensor_status.vive,
+        options.use_h265};
+
+    state->configuration = configuration;
+    state->cameras = std::move(cameras);
+    state->sensor_status = sensor_status;
+    state->session_options = session_options;
+    return true;
+}
+
 }  // namespace
 
 Runtime::Runtime(RuntimeOptions options)
@@ -93,15 +201,6 @@ int Runtime::run() {
         fprintf(stderr, "ERROR: %s\n", configuration_result.error.c_str());
         return 2;
     }
-    const ProductConfiguration configuration = *configuration_result.configuration;
-    const bool is_banana = configuration.profile == ProductProfile::banana;
-    const bool is_cherry = configuration.profile == ProductProfile::cherry;
-    const std::string video_option_error = profile_video_option_error(
-        configuration.profile, options_.use_h265);
-    if (!video_option_error.empty()) {
-        fprintf(stderr, "ERROR: %s\n", video_option_error.c_str());
-        return 2;
-    }
 
     const std::string prefix =
         capture_output_prefix(options_.output_prefix);
@@ -123,67 +222,16 @@ int Runtime::run() {
         printf("[note] H.265 disabled (--no-h265), output Y8 only\n");
     }
 
-    CameraDiscoveryResult cameras = discover_cameras(configuration);
-    if (is_cherry &&
-        (!cameras.cherry.stereo.enabled ||
-         cameras.cherry.stereo.device_path.empty() ||
-         cameras.cherry.serial_path.empty())) {
-        fprintf(stderr,
-                "ERROR: cherry requires one paired H.264 video and serial device\n");
-        for (const std::string& error : cameras.camera_errors) {
-            fprintf(stderr, "  %s\n", error.c_str());
-        }
-        return 1;
-    }
-    if (!is_banana && !is_cherry && cameras.active_count <= 0) {
-        fprintf(stderr, "ERROR: No cameras\n");
-        return 1;
-    }
-    if (is_banana && !configuration.wrist.allow_missing_devices) {
-        int expected = static_cast<int>(cameras.wrist.size());
-        if (configuration.sixcam_enabled) expected += 2;
-        if (cameras.active_count != expected) {
-            fprintf(stderr, "ERROR: banana requires all devices (wrist x2 + sixcam)\n");
-            for (const std::string& error : cameras.camera_errors) {
-                fprintf(stderr, "  %s\n", error.c_str());
-            }
-                        return 1;
-        }
+    ProfileState state;
+    std::string profile_error;
+    if (!build_profile_state(&state, *configuration_result.configuration,
+                             options_, &profile_error)) {
+        fprintf(stderr, "ERROR: %s\n", profile_error.c_str());
+        return 2;
     }
 
-    if (is_banana && options_.use_imu) {
-        bool any_imu = false;
-        for (const auto& cam : cameras.wrist) {
-            if (cam.enabled && cam.config.has_imu) any_imu = true;
-        }
-        if (!any_imu) {
-            options_.use_imu = false;
-            printf("[imu] wrist cameras have no IMU, IMU disabled\n");
-        }
-    }
-
-    bool use_vive = false;
-    if (is_cherry) {
-        printf("[vive] cherry profile, VIVE disabled\n");
-    } else if (is_banana) {
-        printf("[vive] banana profile, VIVE disabled\n");
-    } else {
-        int vive_count = detect_vive_trackers();
-        use_vive = vive_count > 0;
-        if (!use_vive) {
-            printf("[vive] no tracker detected, VIVE disabled\n");
-        } else {
-            printf("[vive] %d tracker(s) detected, VIVE enabled\n", vive_count);
-        }
-    }
-
-    const CaptureSensorStatus sensor_status = capture_sensor_status(
-        configuration.profile, options_.use_imu, options_.use_as5600, use_vive);
-
-    SessionOptions session_options{
-        sensor_status.imu, sensor_status.as5600, sensor_status.vive,
-        options_.use_h265};
-    SessionRunner sessions(cameras, session_options, session_running_);
+    SessionRunner sessions(state.cameras, state.session_options,
+                           session_running_);
 
     bool ready = true;
     SocketServer socket;
@@ -193,7 +241,7 @@ int Runtime::run() {
     ControlPump pump_controls;
 
     GpioControl gpio;
-    printf("\n=== Unified Capture (%d camera(s)) ===\n", cameras.active_count);
+    printf("\n=== Unified Capture (%d camera(s)) ===\n", state.cameras.active_count);
     gpio.disable_led_trigger();
     gpio.set_led(false);
 
@@ -210,7 +258,7 @@ int Runtime::run() {
         if (saved_stdout >= 0 && null_fd >= 0) {
             dup2(null_fd, STDOUT_FILENO);
         }
-        cameras = discover_cameras(configuration);
+        state.cameras = discover_cameras(state.configuration);
         if (saved_stdout >= 0) {
             dup2(saved_stdout, STDOUT_FILENO);
             close(saved_stdout);
@@ -231,7 +279,7 @@ int Runtime::run() {
             }
             // 录制前重新枚举设备，让本次 session 使用最新的设备路径
             rescan_cameras();
-            sessions.refresh_cameras(cameras);
+            sessions.refresh_cameras(state.cameras);
             target_start_time_ = ceil_to_next_second();
             return std::string("{\"ok\":true}");
         }
@@ -274,17 +322,51 @@ int Runtime::run() {
                 rescan_cameras();
             }
             CaptureStatusResponse status{
-                std::string(product_profile_name(configuration.profile)),
+                std::string(product_profile_name(state.configuration.profile)),
                 ready,
-                cameras.degraded,
+                state.cameras.degraded,
                 session_running_,
                 current_elapsed_ms(session_running_),
-                status_cameras(cameras),
-                cameras.camera_errors,
-                sensor_status.imu,
-                sensor_status.as5600,
-                sensor_status.vive};
+                status_cameras(state.cameras),
+                state.cameras.camera_errors,
+                state.sensor_status.imu,
+                state.sensor_status.as5600,
+                state.sensor_status.vive};
             return make_capture_status_json(status);
+        }
+
+        if (command.kind == SocketCommandKind::set_product) {
+            if (session_running_) {
+                return make_error_json("busy");
+            }
+            const auto target = parse_product_profile(command.product);
+            if (!target.has_value()) {
+                return make_error_json("unknown product");
+            }
+
+            ProductConfigResult config_result =
+                load_product_configuration_for_profile(
+                    *target, options_.camera_map_path);
+            if (!config_result.configuration) {
+                return make_error_json(config_result.error);
+            }
+
+            ProfileState next;
+            std::string reload_error;
+            if (!build_profile_state(&next, *config_result.configuration,
+                                     options_, &reload_error)) {
+                return make_error_json(reload_error);
+            }
+
+            if (!write_product_profile(options_.product_config_path, *target)) {
+                return make_error_json("failed to persist product");
+            }
+
+            state = std::move(next);
+            sessions.refresh_cameras(state.cameras);
+            sessions.refresh_options(state.session_options);
+            return std::string("{\"ok\":true,\"product\":\"") +
+                   std::string(product_profile_name(*target)) + "\"}";
         }
 
         return std::string(

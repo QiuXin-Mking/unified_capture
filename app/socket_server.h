@@ -4,12 +4,13 @@
 #include <string>
 #include <string_view>
 
-enum class SocketCommandKind { start, stop, preview, status, unknown };
+enum class SocketCommandKind { start, stop, preview, status, set_product, unknown };
 
 struct SocketCommand {
     SocketCommandKind kind;
     std::string preview_channel;
     std::string preview_path;
+    std::string product;
 };
 
 SocketCommand parse_socket_command(std::string_view request);

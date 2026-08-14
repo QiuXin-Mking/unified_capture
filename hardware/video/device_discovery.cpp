@@ -70,7 +70,7 @@ std::string dirname(const std::string& path) {
     return path.substr(0, pos);
 }
 
-// ── V4L2 format enumeration (for banana wrist discovery) ──
+// ── V4L2 format enumeration (for mango wrist discovery) ──
 
 bool enumerate_mjpeg_formats(const std::string& dev_path,
                               std::vector<WristVideoFormat>& out_formats) {
@@ -196,10 +196,11 @@ std::vector<DiscoveredDevice> scan_v4l2_devices() {
     return result;
 }
 
-// ── initial_result (mango profile defaults) ──
+// ── initial_result (banana profile defaults) ──
 
 CameraDiscoveryResult initial_result() {
     CameraDiscoveryResult result;
+    result.profile = ProductProfile::banana;
     result.sixcam.enabled = true;
     result.jhh2 = {{
         {{"jhh2_left", kJhh2Vid, kJhh2Pid, 0, 3840, 1200, 30, 16000000, 30,
@@ -210,9 +211,9 @@ CameraDiscoveryResult initial_result() {
     return result;
 }
 
-// ── discover_mango_cameras ──
+// ── discover_banana_cameras ──
 
-CameraDiscoveryResult discover_mango_cameras() {
+CameraDiscoveryResult discover_banana_cameras() {
     CameraDiscoveryResult result = initial_result();
 
     std::vector<DiscoveredDevice> devices = scan_v4l2_devices();
@@ -288,12 +289,12 @@ CameraDiscoveryResult discover_mango_cameras() {
     return result;
 }
 
-// ── discover_banana_cameras ──
+// ── discover_mango_cameras ──
 
-CameraDiscoveryResult discover_banana_cameras(
+CameraDiscoveryResult discover_mango_cameras(
     const ProductConfiguration& configuration) {
     CameraDiscoveryResult result;
-    result.profile = ProductProfile::banana;
+    result.profile = ProductProfile::mango;
 
     std::vector<DiscoveredDevice> devices = scan_v4l2_devices();
     printf("V4L2: found %zu device(s)\n", devices.size());
@@ -335,7 +336,7 @@ CameraDiscoveryResult discover_banana_cameras(
     result.camera_errors = std::move(wrist.errors);
     result.active_count = wrist.active_count;
 
-    // ── SixCam discovery (banana) ──
+    // ── SixCam discovery (mango) ──
     if (configuration.sixcam_enabled) {
         uint32_t sixcam_bus = 0;
 
@@ -432,8 +433,8 @@ CameraDiscoveryResult discover_cameras(const ProductConfiguration& configuration
     if (configuration.profile == ProductProfile::cherry) {
         return discover_cherry_cameras(configuration);
     }
-    if (configuration.profile == ProductProfile::banana) {
-        return discover_banana_cameras(configuration);
+    if (configuration.profile == ProductProfile::mango) {
+        return discover_mango_cameras(configuration);
     }
-    return discover_mango_cameras();
+    return discover_banana_cameras();
 }

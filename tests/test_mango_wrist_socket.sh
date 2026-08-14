@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RK3588-only acceptance for the banana wrist profile.
+# RK3588-only acceptance for the mango wrist profile.
 #
 # Start unified_capture with a fresh, timestamped PREFIX before each case.
 # This script never deletes capture data.  Disconnect cameras between runs and
@@ -76,7 +76,7 @@ assert_no_capture_files() {
 }
 
 status=$(send status)
-require "$status" '"product":"banana"'
+require "$status" '"product":"mango"'
 require "$status" '"wrist_left"'
 require "$status" '"wrist_right"'
 require "$status" '"ready":true'
@@ -109,7 +109,7 @@ wait_running false
 session_dir=$(find "$PREFIX" -mindepth 1 -maxdepth 1 -type d -name 'session_*' -print | sort | tail -n 1)
 test -n "$session_dir" || { echo "no session directory below $PREFIX" >&2; exit 1; }
 if find "$session_dir" -name '*.y8' -print -quit | grep -q .; then
-    echo "banana must not write Y8 files" >&2
+    echo "mango must not write Y8 files" >&2
     exit 1
 fi
 
@@ -135,4 +135,4 @@ case "$CASE" in
         ;;
 esac
 
-echo "PASS: banana wrist socket acceptance ($CASE)"
+echo "PASS: mango wrist socket acceptance ($CASE)"

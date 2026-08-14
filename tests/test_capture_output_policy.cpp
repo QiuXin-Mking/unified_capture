@@ -17,27 +17,27 @@ int main() {
     assert(cherry_error.find("H.264") != std::string::npos);
     assert(cherry_error.find("mandatory") != std::string::npos);
     assert(cherry_error.find("--no-h265") != std::string::npos);
-    assert(profile_video_option_error(ProductProfile::banana, false).find(
+    assert(profile_video_option_error(ProductProfile::mango, false).find(
                "H.265") != std::string::npos);
-    assert(profile_video_option_error(ProductProfile::mango, false).empty());
+    assert(profile_video_option_error(ProductProfile::banana, false).empty());
 
-    const CameraOutputPolicy left = banana_camera_output_policy("wrist_left");
+    const CameraOutputPolicy left = mango_camera_output_policy("wrist_left");
     assert(left.output_h265);
     assert(!left.output_y8);
 
-    const CameraOutputPolicy right = banana_camera_output_policy("wrist_right");
+    const CameraOutputPolicy right = mango_camera_output_policy("wrist_right");
     assert(right.output_h265);
     assert(!right.output_y8);
 
-    const CameraOutputPolicy jhh02 = banana_camera_output_policy("jhh02");
+    const CameraOutputPolicy jhh02 = mango_camera_output_policy("jhh02");
     assert(jhh02.output_h265);
     assert(!jhh02.output_y8);
 
-    const CameraOutputPolicy jhh04 = banana_camera_output_policy("jhh04");
+    const CameraOutputPolicy jhh04 = mango_camera_output_policy("jhh04");
     assert(!jhh04.output_h265);
     assert(!jhh04.output_y8);
 
-    const CameraOutputPolicy unknown = banana_camera_output_policy("unknown");
+    const CameraOutputPolicy unknown = mango_camera_output_policy("unknown");
     assert(!unknown.output_h265);
     assert(!unknown.output_y8);
 }

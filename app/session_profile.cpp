@@ -10,7 +10,7 @@ std::vector<CameraSlot> active_profile_cameras(
         return active;
     }
 
-    const auto& slots = cameras.profile == ProductProfile::banana
+    const auto& slots = cameras.profile == ProductProfile::mango
                             ? cameras.wrist
                             : cameras.jhh2;
     for (const CameraSlot& slot : slots) {
@@ -28,7 +28,7 @@ std::string profile_cameras_json(const CameraDiscoveryResult& cameras) {
                "}";
     }
 
-    if (cameras.profile == ProductProfile::banana) {
+    if (cameras.profile == ProductProfile::mango) {
         return "\"cameras\":{\"wrist_left\":" +
                std::string(cameras.wrist[0].enabled ? "true" : "false") +
                ",\"wrist_right\":" +

@@ -29,7 +29,7 @@ struct ProductConfiguration {
     ProductProfile profile = ProductProfile::mango;
     WristDeviceMap wrist;
     CherryDeviceMap cherry;
-    bool sixcam_enabled = false;  // banana: include six-camera module
+    bool sixcam_enabled = false;  // mango: include six-camera module
 };
 
 struct ProductConfigResult {
@@ -40,4 +40,9 @@ struct ProductConfigResult {
 ProductConfigResult load_product_configuration(
     const std::string& product_config_path,
     const std::string& camera_map_path);
+ProductConfigResult load_product_configuration_for_profile(
+    ProductProfile profile,
+    const std::string& camera_map_path);
 std::string_view product_profile_name(ProductProfile profile);
+std::optional<ProductProfile> parse_product_profile(std::string_view value);
+bool write_product_profile(const std::string& path, ProductProfile profile);
