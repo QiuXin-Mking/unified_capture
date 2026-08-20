@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-RK3588 统一采集程序。`mango` 采集六目模组（JHH02/JHH04）与左、右腕部单目，输出 H.265 MKV 和异步 IMU JSONL；`banana` 保持 2 路 JHH2 独立双目与六目模组（含 AS5600/VIVE）；`cherry` 为 YCTC SC233HGS 双目，直通 UVC H.264 并采集 CDC ACM IMU/MAG/FRAME_META。mango 与 cherry 均不输出 Y8。目标平台为 RK3588 ARM64 板端。
+RK3588 统一采集程序。`mango` 采集六目模组（JHH02/JHH04）与左、右腕部单目，输出 H.265 MKV、六目四目侧 Y8 和异步 IMU JSONL；`banana` 保持 2 路 JHH2 独立双目与六目模组（含 AS5600/VIVE）；`cherry` 为 YCTC SC233HGS 双目，直通 UVC H.264 并采集 CDC ACM IMU/MAG/FRAME_META。目标平台为 RK3588 ARM64 板端。
 
 采集方式: **UVC (V4L2)** — 摄像头通过 USB Video Class 协议经 V4L2 从 `/dev/video*` 获取 MJPG/H.264 帧
 
@@ -130,7 +130,7 @@ Unix Domain Socket，路径 `/tmp/unified_capture.sock`，每条命令以换行�
 ├── jhh2_left/   → jhh2_left-<timestamp>.mkv + .y8 + .jsonl（IMU）
 ├── jhh2_right/  → jhh2_right-<timestamp>.mkv + .y8 + .jsonl（IMU）
 ├── jhh02/       → jhh02-<timestamp>.mkv + .y8 + .jsonl（IMU）
-├── jhh04/       → jhh04-<timestamp>.y8 + .jsonl（IMU）
+├── jhh04/       → jhh04-<timestamp>.mkv + .y8 + .jsonl（IMU）
 ├── encoder-<timestamp>.jsonl   → AS5600
 ├── tracker_raw.jsonl           → VIVE 原始 pose
 └── tracker.jsonl               → VIVE 每设备 100 Hz 重采样 pose

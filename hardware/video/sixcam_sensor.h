@@ -7,7 +7,9 @@
 #include "hardware/video/capture_pipeline.h"
 #include "hardware/video/mpp_encoder.h"
 #include "hardware/video/v4l2_device.h"
+#include "hardware/video/video_input_format.h"
 #include "hardware/video/video_frame_processor.h"
+#include "hardware/video/y8_shared_memory.h"
 
 #include <chrono>
 #include <cstdio>
@@ -27,6 +29,7 @@ struct SixCamChannel {
     int gop = 0;
     bool output_h265 = false;
     bool output_y8 = false;
+    VideoInputFormat input_format = VideoInputFormat::mjpeg;
     bool has_imu = false;
     ImuOrientation imu_orientation = ImuOrientation::HORIZONTAL_TOP;
     std::string device_path;
@@ -37,6 +40,7 @@ struct SixCamChannel {
     int fifo_fd = -1;
     FILE* fifo_fp = nullptr;
     FILE* y8_fp = nullptr;
+    Y8SharedMemoryPublisher y8_publisher;
     ImuFrameQueue imu_queue{64};
     VideoPipelineStats stats;
     int actual_width = 0;
@@ -79,7 +83,8 @@ protected:
             ch.out_dir = path;
             mkdir_p(path, 0755);
             if (!ch.device.open(
-                    ch.device_path, ch.width, ch.height, ch.fps)) {
+                    ch.device_path, ch.width, ch.height, ch.fps,
+                    v4l2_pixel_format(ch.input_format))) {
                 fprintf(stderr, "[%s] V4L2 open failed\n", ch.name);
                 return;
             }
@@ -106,6 +111,15 @@ protected:
                 if (!ch.y8_fp) {
                     fprintf(stderr, "[%s] cannot create Y8 output\n", ch.name);
                     return;
+                }
+                if (std::string(ch.name) == "jhh04" &&
+                    !ch.y8_publisher.open(
+                        "/tmp/unified_capture_jhh04_y8.sock",
+                        "/unified_capture_jhh04_y8", ch.actual_width,
+                        ch.actual_height)) {
+                    fprintf(stderr,
+                            "[%s] live Y8 publisher unavailable; file output remains enabled\n",
+                            ch.name);
                 }
             }
         }
@@ -173,6 +187,7 @@ protected:
                 fclose(ch.y8_fp);
                 ch.y8_fp = nullptr;
             }
+            ch.y8_publisher.close();
             ch.device.close();
             if (ch.output_h265) {
                 ch.mpp.destroy();
@@ -194,6 +209,7 @@ private:
         channel.gop = config.gop;
         channel.output_h265 = config.output_h265;
         channel.output_y8 = config.output_y8;
+        channel.input_format = sixcam_input_format(config.name);
         channel.has_imu = config.has_imu;
         channel.imu_orientation = config.imu_orientation;
         channel.device_path = device_path;
@@ -252,7 +268,15 @@ private:
             ch.actual_width,
             ch.actual_height,
             ch.nv12_stride,
+            {},
+            ch.input_format,
         };
+        if (ch.y8_publisher.opened()) {
+            options.y8_publish = [&ch](const uint8_t* data, size_t bytes,
+                                       uint64_t frame_idx, uint64_t pts_us) {
+                return ch.y8_publisher.publish(data, bytes, frame_idx, pts_us);
+            };
+        }
         VideoFrameProcessor processor(
             options, ch.output_h265 ? &ch.mpp : nullptr,
             ch.fifo_fp, ch.y8_fp, ch.has_imu ? &ch.imu_queue : nullptr,
@@ -284,7 +308,8 @@ private:
                 "[%s] PIPELINE acquired=%llu processed=%llu "
                 "acquired_fps=%.2f processed_fps=%.2f gaps=%llu "
                 "overflows=%llu decode_failures=%llu encoder_failures=%llu "
-                "imu_overflows=%llu decode_us=%.1f imu_us=%.1f "
+                "imu_overflows=%llu y8_publish_failures=%llu "
+                "decode_us=%.1f imu_us=%.1f "
                 "nv12_us=%.1f encoder_submit_us=%.1f encoder_us=%.1f "
                 "h265_bytes=%zu\n",
                 ch.name,
@@ -296,6 +321,7 @@ private:
                 static_cast<unsigned long long>(ch.stats.decode_failures),
                 static_cast<unsigned long long>(ch.stats.encoder_failures),
                 static_cast<unsigned long long>(ch.stats.imu_queue_overflows),
+                static_cast<unsigned long long>(ch.stats.y8_publish_failures),
                 timing.decode_us / frames, timing.imu_us / frames,
                 timing.nv12_us / frames,
                 timing.encoder_submit_us / frames,

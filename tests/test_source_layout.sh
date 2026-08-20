@@ -23,6 +23,7 @@ for path in \
 	test -f "$path"
 done
 bash -n deploy/sync_to_rk3588.sh
+bash -n deploy/test_yuyv_concurrency.sh
 bash -n tests/test_sync_to_rk3588.sh
 
 for source in cherry_discovery.cpp cherry_protocol.cpp cherry_h264_writer.cpp cherry_serial_sensor.cpp cherry_video_sensor.cpp; do

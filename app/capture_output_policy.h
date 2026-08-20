@@ -39,5 +39,8 @@ inline CameraOutputPolicy mango_camera_output_policy(std::string_view name) {
     if (name == "wrist_left" || name == "wrist_right" || name == "jhh02") {
         return {true, false};
     }
+    if (name == "jhh04") {
+        return {true, true};
+    }
     return {false, false};
 }

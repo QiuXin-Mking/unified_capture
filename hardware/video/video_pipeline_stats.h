@@ -10,6 +10,7 @@ struct VideoPipelineStats {
     uint64_t sequence_gaps = 0;
     uint64_t encoder_failures = 0;
     uint64_t imu_queue_overflows = 0;
+    uint64_t y8_publish_failures = 0;
 };
 
 class V4l2SequenceTracker {
@@ -36,5 +37,6 @@ inline bool video_pipeline_valid(const VideoPipelineStats& stats) {
            stats.queue_overflows == 0 &&
            stats.sequence_gaps == 0 &&
            stats.encoder_failures == 0 &&
-           stats.imu_queue_overflows == 0;
+           stats.imu_queue_overflows == 0 &&
+           stats.y8_publish_failures == 0;
 }

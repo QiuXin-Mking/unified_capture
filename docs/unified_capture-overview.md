@@ -104,8 +104,8 @@ echo "stop"   | nc -U /tmp/unified_capture.sock   # 停止采集
 
 | profile | 目录 | 产物 |
 |---------|------|------|
-| mango | `jhh02/ jhh04/ wrist_left/ wrist_right/` | MKV + IMU JSONL |
-| banana | `jhh2_left/ jhh2_right/ jhh02/ jhh04/` + 顶层 `encoder-*.jsonl`、`tracker*.jsonl` | MKV + IMU/编码器/姿态 JSONL |
+| mango | `jhh02/ jhh04/ wrist_left/ wrist_right/` | MKV + jhh04 Y8 + IMU JSONL |
+| banana | `jhh2_left/ jhh2_right/ jhh02/ jhh04/` + 顶层 `encoder-*.jsonl`、`tracker*.jsonl` | MKV + jhh04 Y8 + IMU/编码器/姿态 JSONL |
 | cherry | `cherry_stereo/` | `cherry_stereo.mkv` + `video_frames/imu/mag/frame_meta` JSONL |
 
 mango 的完整目录树、字段表与命名规则见 [mango-device-overview.md](mango-device-overview.md)。

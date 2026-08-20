@@ -47,7 +47,7 @@ V4L2 采集 (MJPEG 帧)
 
 关键点：
 
-- **视频**：经内核 UVC/V4L2 拿到 MJPEG 帧，`libturbojpeg` 解码成 YUV，转 NV12 交给 Rockchip MPP 做 H.265 硬编，编码流经 FIFO 喂给 ffmpeg `stream-copy` 封装成 MKV。
+- **视频**：JHH04 四目经内核 UVC/V4L2 获取 YUYV，直接拆出 Y/U/V 平面；JHH02 和腕部相机仍获取 MJPEG 并由 `libturbojpeg` 解码成 YUV。两类输入统一转 NV12 交给 Rockchip MPP 做 H.265 硬编，编码流经 FIFO 喂给 ffmpeg `stream-copy` 封装成 MKV。
 - **IMU**：不阻塞视频链路。`VideoFrameProcessor` 每帧解码后从亮度平面读出码带原始字节投递到有界队列；`ImuSensor` 独立线程消费并解析成 JSONL。
 - 腕部相机同样走 MJPEG→H.265 管线，也嵌 IMU 码带；不生成 Y8 灰度。
 
@@ -86,8 +86,9 @@ V4L2 采集 (MJPEG 帧)
 │   ├── jhh02-<ts>.mkv                         # H.265(HEVC) 视频
 │   └── jhh02-<ts>.jsonl                       # IMU（逐帧对齐）
 ├── jhh04/                                      # 六目四目侧 3104×480@30
-│   ├── jhh04-<ts>.mkv                         # 视频
-│   └── jhh04-<ts>.jsonl                       # IMU
+│   ├── jhh04-<ts>.mkv                         # H.265(HEVC) 视频
+│   ├── jhh04-<ts>.y8                          # 无头 Y8 原始帧，逐帧 3104×480
+│   └── jhh04-<ts>.jsonl                       # IMU（逐帧对齐）
 ├── wrist_left/                                 # 左腕 1440×960@30
 │   ├── wrist_left-<ts>.mkv                    # H.265(HEVC) 视频
 │   └── wrist_left-<ts>.jsonl                  # IMU
@@ -128,11 +129,11 @@ V4L2 采集 (MJPEG 帧)
 
 ---
 
-## 5. 附注：jhh04 视频输出待确认
+## 5. jhh04 算法侧读取
 
 命名已对调：**mango = 六目 + 左腕 + 右腕**（无 AS5600/VIVE），**banana = legacy 头部 + AS5600 + VIVE**。
 
-遗留一处需你确认：按「4 路视频」的预期，jhh04（六目四目侧 3104×480）应输出视频，但当前 `app/session_runner.cpp` 里 jhh04 的 `output_h265=false, output_y8=false`，只产出 IMU JSONL，不产 MKV/Y8。历史上曾因 SD 卡带宽瓶颈关闭 jhh02/jhh04 的 Y8（git `46f4b3d`）。需要确认 jhh04 是否应恢复视频输出（H.265 或 Y8）。
+`jhh04` 使用 `3104×480@30` 的 YUYV 输入，同时输出 H.265 MKV 和无头 Y8 原始帧。YUYV 按 `Y0 U Y1 V` 拆分，Y8 直接复制其中的 Y 字节，不包含行填充或文件头；算法侧按 `gray8`、`3104×480`、`30fps` 读取，每帧占 `3104×480` 字节。两种输出来自同一次 YUYV 解包和同一帧序列。
 
 ---
 

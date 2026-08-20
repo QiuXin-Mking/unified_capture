@@ -16,6 +16,7 @@ enum class VideoFrameProcessResult {
     decode_failure,
     encoder_failure,
     imu_queue_overflow,
+    y8_publish_failure,
 };
 
 template <typename CaptureSource>
@@ -96,6 +97,9 @@ VideoPipelineStats run_capture_pipeline(CaptureSource& source,
             } else if (result ==
                        VideoFrameProcessResult::imu_queue_overflow) {
                 ++stats.imu_queue_overflows;
+            } else if (result ==
+                       VideoFrameProcessResult::y8_publish_failure) {
+                ++stats.y8_publish_failures;
             }
         }
         processor.finish();

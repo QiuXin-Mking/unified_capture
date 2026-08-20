@@ -219,7 +219,7 @@ reboot\n
 ```
 /media/usb0/capture/session_050/
 ├── jhh02/         → jhh02-<时间戳>.mkv（H.265）+ jhh02-<时间戳>.jsonl（IMU）
-├── jhh04/         → jhh04-<时间戳>.jsonl（IMU）
+├── jhh04/         → jhh04-<时间戳>.mkv（H.265）+ jhh04-<时间戳>.y8（Y8）+ jhh04-<时间戳>.jsonl（IMU）
 ├── wrist_left/    → wrist_left-<时间戳>.mkv + wrist_left-<时间戳>.jsonl
 └── wrist_right/   → wrist_right-<时间戳>.mkv + wrist_right-<时间戳>.jsonl
 ```
@@ -229,6 +229,7 @@ reboot\n
 - 时间戳格式：`YYYYMMDD-HH_MM_SS`。
 - 各相机的文件只在其在线时产生；某路相机缺失/离线时，对应子目录不创建。
 - 视频为 H.265 编码的 MKV；IMU 为 JSONL（每行一个 JSON 对象，schema 见 [`video-pipeline.md`](video-pipeline.md)）。
+- `jhh04` 的 `.y8` 是无头灰度帧串流，按 `gray8`、`3104×480`、`30fps` 读取，每帧 `3104×480` 字节。
 
 ---
 

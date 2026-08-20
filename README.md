@@ -9,7 +9,7 @@ RK3588 统一采集程序。`mango` 采集六目模组（JHH02/JHH04）与左、
 | JHH2 左目 | 1bcf:2d50 | 3840×1200 | 30fps | H.265 MKV + `.y8` + IMU JSONL |
 | JHH2 右目 | 1bcf:2d50 | 3840×1200 | 30fps | H.265 MKV + `.y8` + IMU JSONL |
 | SixCam JHH02（双目） | 1bcf:2d50 | 4000×1200 | 30fps | H.265 MKV + `.y8` + IMU JSONL |
-| SixCam JHH04（四目） | 1bcf:2d51 | 3104×480 | 30fps | `.y8` + IMU JSONL |
+| SixCam JHH04（四目，YUYV 输入） | 1bcf:2d51 | 3104×480 | 30fps | H.265 MKV + `.y8` + IMU JSONL |
 | AS5600 编码器 | I2C 0x36 | — | 100Hz | JSONL |
 | VIVE Tracker 3.0 | USB HID | — | — | pose JSONL |
 | mango 左腕 | Nori `SL`（可配置） | 1440×960 | 30fps | H.265 MKV + IMU JSONL（无 Y8） |

@@ -12,6 +12,7 @@ MPP_INC  ?= /usr/include/rockchip
 
 # libsurvive path (override as needed).
 SURVIVE_DIR ?= /root/projects/libsurvive
+Y8_SHM_LIBS := $(if $(filter Linux,$(shell uname -s)),-lrt,)
 
 INCLUDES := -I. \
 	-I$(MPP_INC) \
@@ -42,7 +43,7 @@ C_OBJECTS := $(patsubst %.c,build/obj/%.o,$(C_SOURCES))
 OBJS := $(CPP_OBJECTS) $(C_OBJECTS)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean scan test test_calc_cherry_sync test_calc_cherry_frame_imu_sync test_sync_to_rk3588 test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_cherry_h264_writer test_cherry_start_control test_cherry_json test_cherry_serial_lifecycle test_cherry_process_utils test_source_layout help
+.PHONY: all clean scan test test_calc_cherry_sync test_calc_cherry_frame_imu_sync test_sync_to_rk3588 test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_y8_shared_memory test_yuyv_decoder test_sixcam_input_format test_cherry_protocol test_cherry_h264_writer test_cherry_start_control test_cherry_json test_cherry_serial_lifecycle test_cherry_process_utils test_source_layout help
 
 all: $(TARGET)
 
@@ -62,7 +63,7 @@ build/obj/%.o: %.c
 scan: $(TARGET)
 	./$(TARGET) --scan
 
-test: test_calc_cherry_sync test_calc_cherry_frame_imu_sync test_sync_to_rk3588 test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_cherry_protocol test_cherry_h264_writer test_cherry_start_control test_cherry_json test_cherry_serial_lifecycle test_cherry_process_utils test_source_layout
+test: test_calc_cherry_sync test_calc_cherry_frame_imu_sync test_sync_to_rk3588 test_product_config test_cherry_product_config test_cherry_discovery test_wrist_discovery test_session_profile test_status_response test_output_path test_time_utils test_video_capture_control test_capture_output_policy test_socket_command test_compressed_frame_queue test_video_pipeline_stats test_v4l2_frame_view test_yuv_to_nv12 test_imu_luma_decode test_imu_frame_queue test_capture_pipeline test_async_frame_sink test_y8_shared_memory test_yuyv_decoder test_sixcam_input_format test_cherry_protocol test_cherry_h264_writer test_cherry_start_control test_cherry_json test_cherry_serial_lifecycle test_cherry_process_utils test_source_layout
 
 test_calc_cherry_sync:
 	python3 -m unittest tests/test_calc_cherry_sync.py -v
@@ -181,6 +182,20 @@ build/tests/test_yuv_to_nv12: tests/test_yuv_to_nv12.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
 
+test_yuyv_decoder: build/tests/test_yuyv_decoder
+	./$<
+
+build/tests/test_yuyv_decoder: tests/test_yuyv_decoder.cpp hardware/video/yuyv_decoder.h hardware/video/yuv_to_nv12.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+test_sixcam_input_format: build/tests/test_sixcam_input_format
+	./$<
+
+build/tests/test_sixcam_input_format: tests/test_sixcam_input_format.cpp hardware/video/video_input_format.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
 test_imu_luma_decode: build/tests/test_imu_luma_decode
 	./$<
 
@@ -209,6 +224,13 @@ test_async_frame_sink: build/tests/test_async_frame_sink
 build/tests/test_async_frame_sink: tests/test_async_frame_sink.cpp hardware/video/async_frame_sink.h core/bounded_queue.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+test_y8_shared_memory: build/tests/test_y8_shared_memory
+	./$<
+
+build/tests/test_y8_shared_memory: tests/test_y8_shared_memory.cpp hardware/video/y8_shared_memory.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $< $(Y8_SHM_LIBS)
 
 test_cherry_protocol: build/tests/test_cherry_protocol
 	./$<

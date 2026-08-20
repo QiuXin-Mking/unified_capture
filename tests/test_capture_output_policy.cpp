@@ -34,8 +34,8 @@ int main() {
     assert(!jhh02.output_y8);
 
     const CameraOutputPolicy jhh04 = mango_camera_output_policy("jhh04");
-    assert(!jhh04.output_h265);
-    assert(!jhh04.output_y8);
+    assert(jhh04.output_h265);
+    assert(jhh04.output_y8);
 
     const CameraOutputPolicy unknown = mango_camera_output_policy("unknown");
     assert(!unknown.output_h265);

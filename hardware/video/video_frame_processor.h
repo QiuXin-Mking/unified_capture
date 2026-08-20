@@ -8,10 +8,13 @@
 #include "hardware/video/capture_pipeline.h"
 #include "hardware/video/mjpeg_yuv_decoder.h"
 #include "hardware/video/mpp_encoder.h"
+#include "hardware/video/video_input_format.h"
+#include "hardware/video/yuyv_decoder.h"
 
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
@@ -27,6 +30,8 @@ struct VideoFrameProcessorOptions {
     int expected_width = 0;
     int expected_height = 0;
     int nv12_stride = 0;
+    std::function<bool(const uint8_t*, size_t, uint64_t, uint64_t)> y8_publish;
+    VideoInputFormat input_format = VideoInputFormat::mjpeg;
 };
 
 struct VideoFrameProcessorTimings {
@@ -66,10 +71,20 @@ public:
     VideoFrameProcessResult process(const CompressedFrame& frame) {
         const auto decode_start = Clock::now();
         DecodedYuvFrame decoded;
-        if (!decoder_.decode(frame.data.data(), frame.data.size(), decoded)) {
-            error_ = decoder_.error();
-            fprintf(stderr, "[%s] MJPEG YUV decode failed: %s\n",
-                    options_.camera_name, error_.c_str());
+        const bool decoded_ok = options_.input_format == VideoInputFormat::yuyv
+            ? yuyv_decoder_.decode(frame.data.data(), frame.data.size(),
+                                   options_.expected_width,
+                                   options_.expected_height, decoded)
+            : decoder_.decode(frame.data.data(), frame.data.size(), decoded);
+        if (!decoded_ok) {
+            error_ = options_.input_format == VideoInputFormat::yuyv
+                ? yuyv_decoder_.error()
+                : decoder_.error();
+            fprintf(stderr, "[%s] %s YUV decode failed: %s\n",
+                    options_.camera_name,
+                    options_.input_format == VideoInputFormat::yuyv
+                        ? "YUYV" : "MJPEG",
+                    error_.c_str());
             return VideoFrameProcessResult::decode_failure;
         }
         timings_.decode_us += elapsed_since(decode_start);
@@ -140,15 +155,28 @@ public:
                 error_ = "Y8 output is not initialized";
                 return VideoFrameProcessResult::encoder_failure;
             }
+            y8_frame_.resize(static_cast<size_t>(decoded.width) *
+                             static_cast<size_t>(decoded.height));
             for (int row = 0; row < decoded.height; ++row) {
-                const size_t written = fwrite(
-                    decoded.y.data +
-                        static_cast<size_t>(row) * decoded.y.stride,
-                    1, decoded.width, y8_fp_);
+                uint8_t* destination =
+                    y8_frame_.data() + static_cast<size_t>(row) * decoded.width;
+                std::memcpy(destination,
+                            decoded.y.data +
+                                static_cast<size_t>(row) * decoded.y.stride,
+                            static_cast<size_t>(decoded.width));
+                const size_t written = fwrite(destination, 1, decoded.width,
+                                               y8_fp_);
                 if (written != static_cast<size_t>(decoded.width)) {
                     error_ = "Y8 write failed";
                     return VideoFrameProcessResult::encoder_failure;
                 }
+            }
+            if (options_.y8_publish &&
+                !options_.y8_publish(y8_frame_.data(), y8_frame_.size(),
+                                      frame.frame_idx, frame.pts_us)) {
+                fprintf(stderr, "[%s] Y8 shared-memory publish failed\n",
+                        options_.camera_name);
+                return VideoFrameProcessResult::y8_publish_failure;
             }
         }
 
@@ -227,7 +255,9 @@ private:
     ImuFrameQueue* imu_queue_ = nullptr;
     VideoCaptureControl* control_ = nullptr;
     MjpegYuvDecoder decoder_;
+    YuyvDecoder yuyv_decoder_;
     std::vector<uint8_t> nv12_;
+    std::vector<uint8_t> y8_frame_;
     std::unique_ptr<AsyncFrameSink<EncoderSink>> encoder_sink_;
     VideoFrameProcessorTimings timings_;
     std::string error_;
