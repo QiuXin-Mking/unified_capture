@@ -1,22 +1,24 @@
 # unified_capture 介绍
 
-RK3588 上的**统一多相机采集程序**。一套二进制，通过产品配置文件切换三套硬件方案（`mango` / `banana` / `cherry`），负责相机枚举、视频采集、IMU 解码、传感器读取与数据落盘，并对外提供 socket 控制接口供前端/上位机调用。
+RK3588 上的**统一多相机采集程序**。一套二进制，通过产品配置文件切换四套硬件方案（`mango` / `mango_pro` / `banana` / `cherry`），负责相机枚举、视频采集、IMU 解码、传感器读取与数据落盘，并对外提供 socket 控制接口供前端/上位机调用。
 
 ---
 
-## 1. 三套产品方案
+## 1. 四套产品方案
 
 | profile | 硬件 | 采集内容 | 主要输出 |
 |---------|------|----------|----------|
-| `mango` | 六目模组(JHH02/JHH04) + 左/右腕部单目（SL/JHHSW） | 4 路视频 + 4 路 IMU 码带 | H.265 MKV + IMU JSONL（无 Y8、无 AS5600） |
+| `mango` | 独立 JHH2 双目（head，3840×1200）+ 左/右腕部单目（SL/JHHSW） | 3 路视频 + 3 路 IMU 码带 | H.265 MKV + IMU JSONL（无 Y8、无 AS5600） |
+| `mango_pro` | 六目模组(JHH02/JHH04) + 左/右腕部单目（SL/JHHSW） | 4 路视频 + 4 路 IMU 码带 | H.265 MKV + IMU JSONL + jhh04 Y8（无 AS5600） |
 | `banana` | 2× JHH2 独立双目 + 六目 + AS5600 + VIVE Tracker | 视频 + IMU 码带 + 角度 + 位姿 | H.265 MKV + IMU/编码器/姿态 JSONL |
 | `cherry` | YCTC SC233HGS 双目（UVC H.264 + CDC ACM 串口） | 双目视频 + IMU/MAG/FRAME_META | H.264 MKV + 多个 JSONL（无 Y8） |
 
-> **命名已对齐**：**mango = 六目 + 左腕 + 右腕**（无 AS5600/VIVE），**banana = legacy 头部**（2× JHH2 独立双目 + 六目 + AS5600 + VIVE）。
+> **命名已对齐**：ego 系列双目档（mango / mango plus）对应 `mango`，六目档（mango pro / mango pro plus）对应 `mango_pro`；`banana` = legacy 头部（2× JHH2 独立双目 + 六目 + AS5600 + VIVE）。
 
 各方案的详细说明：
 
-- **mango**（六目 + 腕部）：设备组成、采集管线、最终数据包详见 [mango-pro-device-overview.md](mango-pro-device-overview.md)。四路相机均输出 H.265 MKV + 异步 IMU JSONL，不生成 Y8、不启动 AS5600；`allow_missing_devices=true` 时缺失一侧腕部仍可启动（`status` 返回 `degraded:true`）。当前实现对应产品的**六目档（mango pro / mango pro plus）**；双目档（mango / mango plus）尚未支持，见 [mango-device-overview.md](mango-device-overview.md)。
+- **mango**（双目 + 腕部）：设备组成、采集管线、最终数据包详见 [mango-device-overview.md](mango-device-overview.md)。头部 head（独立 JHH2 双目）+ 左右腕共 3 路相机均输出 H.265 MKV + 异步 IMU JSONL，不生成 Y8、不启动 AS5600；`allow_missing_devices=true` 时缺失部分设备仍可启动（`status` 返回 `degraded:true`）。
+- **mango_pro**（六目 + 腕部）：设备组成、采集管线、最终数据包详见 [mango-pro-device-overview.md](mango-pro-device-overview.md)。四路相机均输出 H.265 MKV + 异步 IMU JSONL，六目四目侧 jhh04 额外输出 Y8，不启动 AS5600。
 - **banana**（legacy 头部）：2× JHH2 独立双目 + 六目 + AS5600 + VIVE，输出 H.265 MKV + IMU/编码器/姿态 JSONL。
 - **cherry**：相机已编码的 H.264 直通 ffmpeg remux 成 MKV，不 JPEG 解码、不 MPP 二次编码；串口独立输出 IMU/MAG/FRAME_META。
 
@@ -67,7 +69,7 @@ make CXX=aarch64-linux-gnu-g++ CC=aarch64-linux-gnu-gcc
 
 ```bash
 install -d /etc/unified_capture
-cp deploy/product.conf.example /etc/unified_capture/product.conf   # 选 mango/banana/cherry
+cp deploy/product.conf.example /etc/unified_capture/product.conf   # 选 mango/mango_pro/banana/cherry
 cp deploy/camera-map.conf.example /etc/unified_capture/camera-map.conf
 ```
 
@@ -104,11 +106,12 @@ echo "stop"   | nc -U /tmp/unified_capture.sock   # 停止采集
 
 | profile | 目录 | 产物 |
 |---------|------|------|
-| mango | `jhh02/ jhh04/ wrist_left/ wrist_right/` | MKV + jhh04 Y8 + IMU JSONL |
+| mango | `head/ wrist_left/ wrist_right/` | MKV + IMU JSONL（无 Y8） |
+| mango_pro | `jhh02/ jhh04/ wrist_left/ wrist_right/` | MKV + jhh04 Y8 + IMU JSONL |
 | banana | `jhh2_left/ jhh2_right/ jhh02/ jhh04/` + 顶层 `encoder-*.jsonl`、`tracker*.jsonl` | MKV + jhh04 Y8 + IMU/编码器/姿态 JSONL |
 | cherry | `cherry_stereo/` | `cherry_stereo.mkv` + `video_frames/imu/mag/frame_meta` JSONL |
 
-mango 的完整目录树、字段表与命名规则见 [mango-pro-device-overview.md](mango-pro-device-overview.md)（六目档）。
+mango（双目档）完整目录树见 [mango-device-overview.md](mango-device-overview.md)，mango_pro（六目档）见 [mango-pro-device-overview.md](mango-pro-device-overview.md)。
 
 ---
 

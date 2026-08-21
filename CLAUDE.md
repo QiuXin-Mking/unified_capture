@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-RK3588 统一采集程序。`mango` 采集六目模组（JHH02/JHH04）与左、右腕部单目，输出 H.265 MKV、六目四目侧 Y8 和异步 IMU JSONL；`banana` 保持 2 路 JHH2 独立双目与六目模组（含 AS5600/VIVE）；`cherry` 为 YCTC SC233HGS 双目，直通 UVC H.264 并采集 CDC ACM IMU/MAG/FRAME_META。目标平台为 RK3588 ARM64 板端。
+RK3588 统一采集程序，四个 profile。`mango`（双目档）采集独立 JHH2 双目（head，3840×1200）与左、右腕部单目，输出 H.265 MKV + 异步 IMU JSONL；`mango_pro`（六目档）采集六目模组（JHH02/JHH04）与左右腕，六目四目侧额外输出 Y8；`banana` 保持 2 路 JHH2 独立双目与六目模组（含 AS5600/VIVE）；`cherry` 为 YCTC SC233HGS 双目，直通 UVC H.264 并采集 CDC ACM IMU/MAG/FRAME_META。目标平台为 RK3588 ARM64 板端。
 
 采集方式: **UVC (V4L2)** — 摄像头通过 USB Video Class 协议经 V4L2 从 `/dev/video*` 获取 MJPG/H.264 帧
 
-> **命名已对齐**：前端 UI 的「Mango」产品 = 头部 Ego + 左腕 + 右腕，对应**守护进程的 `mango` profile**（六目 jhh02/jhh04 + 腕部 SL/JHHSW）。守护进程的 `banana` 是 legacy 头部方案（2 路 JHH2 独立双目 + 六目 + AS5600 + VIVE）。
+> **命名已对齐**：ego 系列四档中，双目档（mango / mango plus）对应守护进程 `mango` profile，六目档（mango pro / mango pro plus）对应守护进程 `mango_pro` profile。守护进程的 `banana` 是 legacy 头部方案（2 路 JHH2 独立双目 + 六目 + AS5600 + VIVE）。
 
 ## 编译
 
@@ -28,7 +28,7 @@ make test
 
 生产程序的编译单元包括 `app/*.cpp`、`core/product_config.cpp`、`hardware/common/sensor.cpp`、`hardware/video/device_discovery.cpp`、`hardware/wrist/*.cpp`、`hardware/cherry/*.cpp` 和 `hardware/as5600/as5600.c`。
 
-`/etc/unified_capture/product.conf` 选择 `mango`、`banana` 或 `cherry`；`/etc/unified_capture/camera-map.conf` 保存 UVC `iProduct` 匹配和 Cherry 的严格视频参数。Cherry 通过 sysfs USB device 父路径配对 UVC 与 ttyACM，不能只按 bus number 配对。腕部麦克风和 Cherry 腕部相机能力尚未确认；不要在未另行批准前增加音频或声称腕部硬件可用。
+`/etc/unified_capture/product.conf` 选择 `mango`、`mango_pro`、`banana` 或 `cherry`；`/etc/unified_capture/camera-map.conf` 保存 UVC `iProduct` 匹配和 Cherry 的严格视频参数。Cherry 通过 sysfs USB device 父路径配对 UVC 与 ttyACM，不能只按 bus number 配对。腕部麦克风和 Cherry 腕部相机能力尚未确认；不要在未另行批准前增加音频或声称腕部硬件可用。
 
 ## 架构
 
@@ -43,9 +43,9 @@ app/main.cpp
       ├── discover_cameras()   → V4L2 设备枚举
       ├── GpioControl          → GPIO 按键与指示灯
       └── SessionRunner
-           ├── VideoSensor × 2   → JHH2 左/右（各自 std::thread）
-           ├── SixCamSensor × 1  → JHH02 + JHH04 双通道
-           ├── ImuSensor × 最多 4 → JHH2 左、JHH2 右、JHH02、JHH04 各自从 FrameQueue 异步消费 BGR 帧
+           ├── VideoSensor × N   → 按 profile：mango 双目档 = head + 腕部；mango_pro = 腕部；banana = JHH2 左/右（各自 std::thread）
+           ├── SixCamSensor × 1  → JHH02 + JHH04 双通道（mango_pro / banana）
+           ├── ImuSensor × 最多 4 → head / JHH2 左、JHH2 右、JHH02、JHH04 各自从 FrameQueue 异步消费 BGR 帧
            ├── EncoderSensor × 1 → AS5600 I2C 读取（100 Hz）
            └── ViveTracker × 1   → VIVE 姿态（检测到设备时）
 ```

@@ -8,7 +8,16 @@ stereo.format=H264
 stereo.fps=30
 allow_missing_devices=true
 
+# 双目档（mango / mango plus）：头部 head 硬编码为独立 JHH2 双目
+# （1bcf:2d50，3840×1200@30），无需在此声明。
 [mango]
+allow_missing_devices=true
+wrist_left.product=SL
+wrist_right.product=JHHSW
+
+# 六目档（mango pro / mango pro plus）：六目模组 JHH02/JHH04 由
+# sixcam.enabled=true 开启。
+[mango_pro]
 allow_missing_devices=true
 wrist_left.product=SL
 wrist_right.product=JHHSW

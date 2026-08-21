@@ -17,14 +17,14 @@
 
 ## 0. 支持状态（先看这一节）
 
-**当前程序尚不支持双目档启动头部主摄。** 守护进程的 `mango` profile，头部主摄只有「六目模组」一条路径，且强制 JHH04 + JHH02 成对：
+**代码已实现，但尚未在板端验证。** 守护进程新增 `mango`（双目档）与 `mango_pro`（六目档）两个 profile：
 
-- `hardware/video/device_discovery.cpp:341` — `discover_mango_cameras()` 先按 `1bcf:2d51` 找 JHH04 确定 USB bus，再在同一 bus 上找 `1bcf:2d50` 的 JHH02；任一缺失即 `sixcam.enabled = false`。
-- `app/session_runner.cpp:107` — 只有 `jhh04_path` 与 `jhh02_path` **都非空**才创建 `SixCamSensor`。
+- `mango`（双目档）：`discover_mango_cameras()` 取一块**不与 JHH04 同 bus** 的独立 JHH2（`1bcf:2d50`）作 `head`，加左右腕共 3 路。
+- `mango_pro`（六目档）：原六目逻辑（JHH04 + JHH02 成对 + 双腕）原样迁移，函数改名 `discover_mango_pro_cameras()`。
 
-因此在 mango profile 下接一块**独立 JHH2 双目模组**（没有 JHH04）时，头部会**完全没有相机**，只剩左右腕两路。独立 JHH2 的发现与采集逻辑目前只存在于 `banana` profile（`device_discovery.cpp:262`）。
+> ⚠️ **板端验证待做**：V4L2 迁移后独立 JHH2 双目从未在 RK3588 实测（见 [Hardware/02-杨总双目摄像头.md](Hardware/02-杨总双目摄像头.md)）。本档代码已通过 host `make test` 与编译级自检，但**端到端采集尚未上板验收**，运行前必须先做板端 60 秒验证（实施计划 `docs/plans/2026-08-21-mango-mango-pro-profile-split.md` Task 10）。
 
-改造点见 [§5 待实现](#5-待实现改造点)。本文其余章节描述的是**产品形态与预期数据包**，不代表当前已可运行。
+本文其余章节描述的是**产品形态与预期数据包**。
 
 ---
 
@@ -163,18 +163,20 @@ V4L2 采集 (MJPEG 帧)
 
 ---
 
-## 5. 待实现（改造点）
+## 5. 实现落点（已完成，待板端验证）
 
-要让 `mango` profile 支持双目档，至少涉及以下几处：
+双目档已按下列改造点落地（实现计划见 `docs/plans/2026-08-21-mango-mango-pro-profile-split.md`）：
 
-| 位置 | 现状 | 需要的改动 |
-|------|------|-----------|
-| `deploy/camera-map.conf` `[mango]` | 只有 `sixcam.enabled` 与腕部 `product` | 增加头部形态开关（六目 / 双目）与双目模组匹配项 |
-| `hardware/video/device_discovery.cpp:341` | mango 只发现六目，且 JHH04 + JHH02 必须成对 | 双目档改为发现独立 JHH2（不与 JHH04 同 bus 的 `1bcf:2d50`） |
-| `app/session_runner.cpp:107` | 只在 JHH04/JHH02 路径都非空时建 `SixCamSensor` | 双目档改建单路 `VideoSensor` + `ImuSensor` |
-| `app/capture_output_policy.h:38` | `mango_camera_output_policy()` 只认 `wrist_left`/`wrist_right`/`jhh02`/`jhh04`，其余返回 `{false, false}`（不输出任何文件） | 补上头部双目通道名的输出策略 |
-| `app/session_profile.cpp` | `profile_cameras_json()` 对 mango 只上报 `wrist_left`/`wrist_right` | 补上头部双目通道的状态上报 |
-| `app/runtime.cpp:127` | mango 严格模式期望数为「腕部 2 + 六目 2」 | 双目档期望数改为「腕部 2 + 头部 1」 |
+| 位置 | 改动 |
+|------|------|
+| `core/product_config.h/.cpp` | `ProductProfile` 新增 `mango_pro`；`mango` 语义改为双目档 |
+| `deploy/camera-map.conf.example` | 拆分 `[mango]`（双目）与 `[mango_pro]`（六目）两段 |
+| `hardware/video/device_discovery.cpp` | 新增 `discover_mango_cameras()`（head + 双腕）；原六目改名 `discover_mango_pro_cameras()` |
+| `app/session_runner.cpp` | 双目档建 head 的 `VideoSensor` + `ImuSensor`；六目逻辑迁入 `mango_pro` 分支 |
+| `app/capture_output_policy.h` | `mango_camera_output_policy` 认 `head`；`mango_pro_camera_output_policy` 认 `jhh02`/`jhh04` |
+| `app/session_profile.cpp` | `profile_cameras_json` 报 `head`；目录追加 `head/` |
+| `app/runtime.cpp` | 严格模式期望数：双目档「腕 2 + 头 1」，六目档「腕 2 + 六目 2」 |
+| `app/socket_server.cpp` | preview 通道白名单加 `head` |
 
 ---
 
