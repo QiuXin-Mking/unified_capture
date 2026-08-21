@@ -36,6 +36,13 @@ struct CameraOutputPolicy {
 };
 
 inline CameraOutputPolicy mango_camera_output_policy(std::string_view name) {
+    if (name == "head" || name == "wrist_left" || name == "wrist_right") {
+        return {true, false};
+    }
+    return {false, false};
+}
+
+inline CameraOutputPolicy mango_pro_camera_output_policy(std::string_view name) {
     if (name == "wrist_left" || name == "wrist_right" || name == "jhh02") {
         return {true, false};
     }

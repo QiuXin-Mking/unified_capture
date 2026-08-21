@@ -29,13 +29,26 @@ int main() {
     assert(right.output_h265);
     assert(!right.output_y8);
 
-    const CameraOutputPolicy jhh02 = mango_camera_output_policy("jhh02");
-    assert(jhh02.output_h265);
-    assert(!jhh02.output_y8);
+    // mango 双目档：head 输出 H.265，无 Y8
+    const CameraOutputPolicy head = mango_camera_output_policy("head");
+    assert(head.output_h265);
+    assert(!head.output_y8);
 
-    const CameraOutputPolicy jhh04 = mango_camera_output_policy("jhh04");
-    assert(jhh04.output_h265);
-    assert(jhh04.output_y8);
+    // mango_pro 六目档：jhh02 无 Y8、jhh04 有 Y8、腕部无 Y8
+    const CameraOutputPolicy pro_jhh02 = mango_pro_camera_output_policy("jhh02");
+    assert(pro_jhh02.output_h265);
+    assert(!pro_jhh02.output_y8);
+    const CameraOutputPolicy pro_jhh04 = mango_pro_camera_output_policy("jhh04");
+    assert(pro_jhh04.output_h265);
+    assert(pro_jhh04.output_y8);
+    const CameraOutputPolicy pro_wrist = mango_pro_camera_output_policy("wrist_left");
+    assert(pro_wrist.output_h265);
+    assert(!pro_wrist.output_y8);
+
+    // mango 双目档不应再认 jhh02/jhh04
+    const CameraOutputPolicy mango_no_sixcam = mango_camera_output_policy("jhh02");
+    assert(!mango_no_sixcam.output_h265);
+    assert(!mango_no_sixcam.output_y8);
 
     const CameraOutputPolicy unknown = mango_camera_output_policy("unknown");
     assert(!unknown.output_h265);
