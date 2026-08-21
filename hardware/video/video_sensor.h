@@ -8,6 +8,7 @@
 #include "hardware/video/mpp_encoder.h"
 #include "hardware/video/v4l2_device.h"
 #include "hardware/video/video_frame_processor.h"
+#include "hardware/video/y8_shared_memory.h"
 
 #include <chrono>
 #include <cstdio>
@@ -65,13 +66,19 @@ protected:
             return;
         }
         if (cfg_.output_y8) {
-            snprintf(path, sizeof(path), "%s/%s-%s.y8",
-                     out_dir_.c_str(), cfg_.name, session_ts_.c_str());
-            y8_fp_ = fopen(path, "wb");
-            if (!y8_fp_) {
-                fprintf(stderr, "[%s] cannot create Y8 file %s\n",
-                        cfg_.name, path);
-                return;
+            char sock_path[128];
+            char shm_name[64];
+            snprintf(sock_path, sizeof(sock_path),
+                     "/tmp/unified_capture_%s_y8.sock", cfg_.name);
+            snprintf(shm_name, sizeof(shm_name),
+                     "/unified_capture_%s_y8", cfg_.name);
+            if (!y8_publisher_.open(sock_path, shm_name,
+                                    actual_width_, actual_height_)) {
+                fprintf(stderr,
+                        "[%s] live Y8 publisher unavailable, Y8 disabled\n",
+                        cfg_.name);
+            } else {
+                y8_publish_ok_ = true;
             }
         }
 
@@ -111,9 +118,14 @@ protected:
             actual_height_,
             nv12_stride_,
         };
+        options.output_y8 = y8_publish_ok_;
+        options.y8_publish = [this](const uint8_t* data, size_t bytes,
+                                    uint64_t frame_idx, uint64_t pts_us) {
+            return y8_publisher_.publish(data, bytes, frame_idx, pts_us);
+        };
         VideoFrameProcessor processor(
             options, cfg_.output_h265 ? &mpp_ : nullptr,
-            fifo_fp_, y8_fp_, cfg_.has_imu ? &imu_queue_ : nullptr,
+            fifo_fp_, nullptr, cfg_.has_imu ? &imu_queue_ : nullptr,
             &control_);
 
         const auto start = std::chrono::steady_clock::now();
@@ -179,9 +191,9 @@ protected:
                    WIFEXITED(status) ? WEXITSTATUS(status) : -1);
             ffmpeg_pid_ = 0;
         }
-        if (y8_fp_) {
-            fclose(y8_fp_);
-            y8_fp_ = nullptr;
+        if (y8_publish_ok_) {
+            y8_publisher_.close();
+            y8_publish_ok_ = false;
         }
         device_.close();
         if (cfg_.output_h265) {
@@ -242,7 +254,8 @@ private:
     std::string fifo_path_;
     int fifo_fd_ = -1;
     FILE* fifo_fp_ = nullptr;
-    FILE* y8_fp_ = nullptr;
+    Y8SharedMemoryPublisher y8_publisher_;
+    bool y8_publish_ok_ = false;
     ImuFrameQueue imu_queue_{64};
     VideoPipelineStats stats_;
     int actual_width_ = 0;

@@ -151,7 +151,9 @@ public:
         }
 
         if (options_.output_y8) {
-            if (!y8_fp_) {
+            const bool write_disk = y8_fp_ != nullptr;
+            const bool publish = static_cast<bool>(options_.y8_publish);
+            if (!write_disk && !publish) {
                 error_ = "Y8 output is not initialized";
                 return VideoFrameProcessResult::encoder_failure;
             }
@@ -164,14 +166,16 @@ public:
                             decoded.y.data +
                                 static_cast<size_t>(row) * decoded.y.stride,
                             static_cast<size_t>(decoded.width));
-                const size_t written = fwrite(destination, 1, decoded.width,
-                                               y8_fp_);
-                if (written != static_cast<size_t>(decoded.width)) {
-                    error_ = "Y8 write failed";
-                    return VideoFrameProcessResult::encoder_failure;
+                if (write_disk) {
+                    const size_t written = fwrite(destination, 1, decoded.width,
+                                                   y8_fp_);
+                    if (written != static_cast<size_t>(decoded.width)) {
+                        error_ = "Y8 write failed";
+                        return VideoFrameProcessResult::encoder_failure;
+                    }
                 }
             }
-            if (options_.y8_publish &&
+            if (publish &&
                 !options_.y8_publish(y8_frame_.data(), y8_frame_.size(),
                                       frame.frame_idx, frame.pts_us)) {
                 fprintf(stderr, "[%s] Y8 shared-memory publish failed\n",

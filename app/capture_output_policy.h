@@ -36,7 +36,10 @@ struct CameraOutputPolicy {
 };
 
 inline CameraOutputPolicy mango_camera_output_policy(std::string_view name) {
-    if (name == "head" || name == "wrist_left" || name == "wrist_right") {
+    if (name == "head") {
+        return {true, true};  // 临时测试：head 额外输出 Y8 灰度
+    }
+    if (name == "wrist_left" || name == "wrist_right") {
         return {true, false};
     }
     return {false, false};

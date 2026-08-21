@@ -29,10 +29,10 @@ int main() {
     assert(right.output_h265);
     assert(!right.output_y8);
 
-    // mango 双目档：head 输出 H.265，无 Y8
+    // mango 双目档：head 输出 H.265 + Y8（Y8 经共享内存 socket，不落盘）
     const CameraOutputPolicy head = mango_camera_output_policy("head");
     assert(head.output_h265);
-    assert(!head.output_y8);
+    assert(head.output_y8);
 
     // mango_pro 六目档：jhh02 无 Y8、jhh04 有 Y8、腕部无 Y8
     const CameraOutputPolicy pro_jhh02 = mango_pro_camera_output_policy("jhh02");
