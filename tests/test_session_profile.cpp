@@ -23,13 +23,13 @@ int main() {
     assert(partial.size() == 1);
     assert(std::string(partial[0].config.name) == "wrist_left");
     assert(profile_cameras_json(partial_mango) ==
-           "\"cameras\":{\"wrist_left\":true,\"wrist_right\":false}");
+           "\"cameras\":{\"head\":false,\"wrist_left\":true,\"wrist_right\":false}");
 
     CameraDiscoveryResult empty_mango;
     empty_mango.profile = ProductProfile::mango;
     assert(active_profile_cameras(empty_mango).empty());
     assert(profile_cameras_json(empty_mango) ==
-           "\"cameras\":{\"wrist_left\":false,\"wrist_right\":false}");
+           "\"cameras\":{\"head\":false,\"wrist_left\":false,\"wrist_right\":false}");
 
     CameraDiscoveryResult banana;
     banana.profile = ProductProfile::banana;
@@ -72,5 +72,31 @@ int main() {
 
     cherry.cherry.serial_path.clear();
     assert(cherry_sensor_roles(cherry).empty());
+
+    // mango 双目档：active 只含腕部，json 报 head，目录含 head
+    CameraDiscoveryResult mango_dual;
+    mango_dual.profile = ProductProfile::mango;
+    mango_dual.head = enabled_slot("head");
+    mango_dual.wrist[0] = enabled_slot("wrist_left");
+    assert(active_profile_cameras(mango_dual).size() == 1);
+    assert(active_profile_cameras(mango_dual)[0].config.name ==
+           std::string("wrist_left"));
+    assert(profile_cameras_json(mango_dual) ==
+           "\"cameras\":{\"head\":true,\"wrist_left\":true,\"wrist_right\":false}");
+    assert(profile_session_directories(mango_dual) ==
+           std::vector<std::string>({"wrist_left", "head"}));
+
+    // mango_pro 六目档：json 报 wrist + jhh04/jhh02，目录含 jhh04/jhh02
+    CameraDiscoveryResult mango_pro;
+    mango_pro.profile = ProductProfile::mango_pro;
+    mango_pro.wrist[0] = enabled_slot("wrist_left");
+    mango_pro.sixcam.enabled = true;
+    mango_pro.sixcam.jhh04_path = "/dev/video6";
+    mango_pro.sixcam.jhh02_path = "/dev/video4";
+    assert(profile_cameras_json(mango_pro) ==
+           "\"cameras\":{\"wrist_left\":true,\"wrist_right\":false,\"jhh04\":true,\"jhh02\":true}");
+    assert(profile_session_directories(mango_pro) ==
+           std::vector<std::string>({"wrist_left", "jhh04", "jhh02"}));
+
     return 0;
 }

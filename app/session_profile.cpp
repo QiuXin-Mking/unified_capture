@@ -10,9 +10,11 @@ std::vector<CameraSlot> active_profile_cameras(
         return active;
     }
 
-    const auto& slots = cameras.profile == ProductProfile::mango
-                            ? cameras.wrist
-                            : cameras.jhh2;
+    const auto& slots =
+        (cameras.profile == ProductProfile::mango ||
+         cameras.profile == ProductProfile::mango_pro)
+            ? cameras.wrist
+            : cameras.jhh2;
     for (const CameraSlot& slot : slots) {
         if (slot.enabled) {
             active.push_back(slot);
@@ -29,10 +31,27 @@ std::string profile_cameras_json(const CameraDiscoveryResult& cameras) {
     }
 
     if (cameras.profile == ProductProfile::mango) {
-        return "\"cameras\":{\"wrist_left\":" +
+        return "\"cameras\":{\"head\":" +
+               std::string(cameras.head.enabled ? "true" : "false") +
+               ",\"wrist_left\":" +
                std::string(cameras.wrist[0].enabled ? "true" : "false") +
                ",\"wrist_right\":" +
                std::string(cameras.wrist[1].enabled ? "true" : "false") + "}";
+    }
+
+    if (cameras.profile == ProductProfile::mango_pro) {
+        std::string json = "\"cameras\":{\"wrist_left\":" +
+               std::string(cameras.wrist[0].enabled ? "true" : "false") +
+               ",\"wrist_right\":" +
+               std::string(cameras.wrist[1].enabled ? "true" : "false");
+        if (cameras.sixcam.enabled) {
+            json += ",\"jhh04\":" +
+                    std::string(!cameras.sixcam.jhh04_path.empty() ? "true" : "false");
+            json += ",\"jhh02\":" +
+                    std::string(!cameras.sixcam.jhh02_path.empty() ? "true" : "false");
+        }
+        json += "}";
+        return json;
     }
 
     std::string json = "\"cameras\":{";
@@ -73,6 +92,10 @@ std::vector<std::string> profile_session_directories(
         directories.emplace_back(camera.config.name);
     }
     if (cameras.profile == ProductProfile::cherry) {
+        return directories;
+    }
+    if (cameras.profile == ProductProfile::mango) {
+        directories.emplace_back("head");
         return directories;
     }
     if (cameras.sixcam.enabled) {

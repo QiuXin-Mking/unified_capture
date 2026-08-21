@@ -30,6 +30,7 @@ struct CameraDiscoveryResult {
     ProductProfile profile = ProductProfile::mango;
     std::array<CameraSlot, 2> jhh2;
     SixCamDevices sixcam;
+    CameraSlot head;
     std::array<CameraSlot, 2> wrist;
     CherryDevices cherry;
     bool degraded = false;
