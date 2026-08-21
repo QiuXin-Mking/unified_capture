@@ -20,4 +20,5 @@ struct CameraConfig {
     ImuOrientation imu_orientation;  // 仅 has_imu=true 时有效
     bool output_h265 = true;         // 是否编码 H.265 → MKV
     bool output_y8  = true;          // 是否写 Y8 原始灰度文件
+    bool output_audio = false;       // 是否采集麦克风音频封装进 MKV（仅六目 jhh02 有 UAC 麦克风）
 };

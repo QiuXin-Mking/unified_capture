@@ -3,7 +3,7 @@
 #include <cassert>
 int main() {
     assert(v4l2_pixel_format(sixcam_input_format("jhh04")) ==
-           kV4l2PixFmtYuyv);
+           kV4l2PixFmtMjpeg);
     assert(v4l2_pixel_format(sixcam_input_format("jhh02")) ==
            kV4l2PixFmtMjpeg);
     assert(v4l2_pixel_format(sixcam_input_format("other")) ==

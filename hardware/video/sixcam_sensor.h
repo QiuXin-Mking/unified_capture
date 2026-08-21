@@ -20,6 +20,9 @@
 #include <thread>
 #include <unistd.h>
 
+// 六目 jhh02 的 UAC1.0 麦克风 ALSA 设备名
+static constexpr const char kAudioDevice[] = "hw:CARD=JHH";
+
 struct SixCamChannel {
     const char* name = nullptr;
     int width = 0;
@@ -29,6 +32,7 @@ struct SixCamChannel {
     int gop = 0;
     bool output_h265 = false;
     bool output_y8 = false;
+    bool output_audio = false;
     VideoInputFormat input_format = VideoInputFormat::mjpeg;
     bool has_imu = false;
     ImuOrientation imu_orientation = ImuOrientation::HORIZONTAL_TOP;
@@ -209,6 +213,7 @@ private:
         channel.gop = config.gop;
         channel.output_h265 = config.output_h265;
         channel.output_y8 = config.output_y8;
+        channel.output_audio = config.output_audio;
         channel.input_format = sixcam_input_format(config.name);
         channel.has_imu = config.has_imu;
         channel.imu_orientation = config.imu_orientation;
@@ -235,16 +240,29 @@ private:
                      ch.out_dir.c_str(), ch.name, session_ts_.c_str());
             char fps[16];
             snprintf(fps, sizeof(fps), "%d", ch.fps);
-            execlp("ffmpeg", "ffmpeg",
-                   "-y", "-hide_banner", "-loglevel", "error",
-                   "-f", "hevc", "-r", fps,
-                   "-i", ch.fifo_path.c_str(),
-                   "-c", "copy", path, nullptr);
+            if (ch.output_audio) {
+                execlp("ffmpeg", "ffmpeg",
+                       "-y", "-hide_banner", "-loglevel", "error",
+                       "-f", "hevc", "-r", fps,
+                       "-i", ch.fifo_path.c_str(),
+                       "-f", "alsa", "-ac", "2", "-ar", "48000",
+                       "-i", kAudioDevice,
+                       "-c:v", "copy",
+                       "-c:a", "aac", "-b:a", "128k",
+                       "-shortest",
+                       path, nullptr);
+            } else {
+                execlp("ffmpeg", "ffmpeg",
+                       "-y", "-hide_banner", "-loglevel", "error",
+                       "-f", "hevc", "-r", fps,
+                       "-i", ch.fifo_path.c_str(),
+                       "-c", "copy", path, nullptr);
+            }
             perror("exec ffmpeg");
             _exit(1);
         }
 
-        ch.fifo_fd = open(ch.fifo_path.c_str(), O_WRONLY);
+        ch.fifo_fd = open(ch.fifo_path.c_str(), O_WRONLY | O_CLOEXEC);
         if (ch.fifo_fd < 0) {
             perror("open fifo for write");
             return false;

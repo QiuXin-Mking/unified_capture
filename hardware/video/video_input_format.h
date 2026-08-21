@@ -21,9 +21,10 @@ enum class VideoInputFormat {
 };
 
 inline VideoInputFormat sixcam_input_format(const char* camera_name) {
-    return camera_name && std::strcmp(camera_name, "jhh04") == 0
-               ? VideoInputFormat::yuyv
-               : VideoInputFormat::mjpeg;
+    // 六目 jhh04 与 jhh02 均用 MJPEG：YUYV 跨格式混流会触发并发 STREAMON
+    // ENOSPC，实测切 MJPEG 已解决（见 memory: jhh-usb3-topology）。
+    (void)camera_name;
+    return VideoInputFormat::mjpeg;
 }
 
 inline uint32_t v4l2_pixel_format(VideoInputFormat format) {
