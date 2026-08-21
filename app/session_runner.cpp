@@ -95,6 +95,54 @@ void SessionRunner::run(const std::string& session_dir,
             }
         }
     } else if (cameras_.profile == ProductProfile::mango) {
+        // ── 双目档：head + 双腕并行启流（无六目 jhh02 可等，六目门控关闭） ──
+        const bool has_head = cameras_.head.enabled &&
+                              !cameras_.head.device_path.empty();
+        capture_control_.reset_stream_start(
+            static_cast<int>(active_profile_cameras(cameras_).size()),
+            /*sixcam_jhh02_available=*/false);
+
+        if (has_head) {
+            CameraConfig config = cameras_.head.config;
+            const CameraOutputPolicy policy =
+                mango_camera_output_policy(config.name);
+            config.output_h265 = policy.output_h265;
+            config.output_y8 = policy.output_y8;
+            auto video = std::make_unique<VideoSensor>(
+                config, session_dir, cameras_.head.device_path,
+                session_number, session_timestamp, session_running_,
+                capture_control_);
+            VideoSensor* video_ptr = video.get();
+            sensors_.push_back(std::move(video));
+            if (options_.use_imu && config.has_imu) {
+                sensors_.push_back(std::make_unique<ImuSensor>(
+                    config.name, session_dir, video_ptr->imu_queue(),
+                    session_number, session_timestamp, config.imu_orientation,
+                    session_running_));
+            }
+        }
+
+        // ── 2. 腕部相机 ──
+        for (const CameraSlot& camera : active_profile_cameras(cameras_)) {
+            CameraConfig config = camera.config;
+            const CameraOutputPolicy policy =
+                mango_camera_output_policy(config.name);
+            config.output_h265 = policy.output_h265;
+            config.output_y8 = policy.output_y8;
+            auto video = std::make_unique<VideoSensor>(
+                config, session_dir, camera.device_path,
+                session_number, session_timestamp, session_running_,
+                capture_control_);
+            VideoSensor* video_ptr = video.get();
+            sensors_.push_back(std::move(video));
+            if (options_.use_imu && config.has_imu) {
+                sensors_.push_back(std::make_unique<ImuSensor>(
+                    config.name, session_dir, video_ptr->imu_queue(),
+                    session_number, session_timestamp, config.imu_orientation,
+                    session_running_));
+            }
+        }
+    } else if (cameras_.profile == ProductProfile::mango_pro) {
         const bool has_sixcam =
             cameras_.sixcam.enabled &&
             !cameras_.sixcam.jhh04_path.empty() &&
@@ -134,18 +182,20 @@ void SessionRunner::run(const std::string& session_dir,
         for (const CameraSlot& camera : active_profile_cameras(cameras_)) {
             CameraConfig config = camera.config;
             const CameraOutputPolicy policy =
-                mango_camera_output_policy(config.name);
+                mango_pro_camera_output_policy(config.name);
             config.output_h265 = policy.output_h265;
             config.output_y8 = policy.output_y8;
             auto video = std::make_unique<VideoSensor>(
                 config, session_dir, camera.device_path,
-                session_number, session_timestamp, session_running_, capture_control_);
+                session_number, session_timestamp, session_running_,
+                capture_control_);
             VideoSensor* video_ptr = video.get();
             sensors_.push_back(std::move(video));
             if (options_.use_imu && config.has_imu) {
                 sensors_.push_back(std::make_unique<ImuSensor>(
-                    config.name, session_dir, video_ptr->imu_queue(), session_number,
-                    session_timestamp, config.imu_orientation, session_running_));
+                    config.name, session_dir, video_ptr->imu_queue(),
+                    session_number, session_timestamp, config.imu_orientation,
+                    session_running_));
             }
         }
     } else {
