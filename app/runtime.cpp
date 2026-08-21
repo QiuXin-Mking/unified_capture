@@ -30,6 +30,14 @@ std::vector<std::pair<std::string, bool>> status_cameras(
         return result;
     }
     if (cameras.profile == ProductProfile::mango) {
+        // mango 双目档：head + 腕部 x2，不报六目
+        result.emplace_back("head", cameras.head.enabled);
+        result.emplace_back("wrist_left", cameras.wrist[0].enabled);
+        result.emplace_back("wrist_right", cameras.wrist[1].enabled);
+        return result;
+    }
+    if (cameras.profile == ProductProfile::mango_pro) {
+        // mango_pro 六目档：腕部 x2 + 六目（jhh04/jhh02）
         result.emplace_back("wrist_left", cameras.wrist[0].enabled);
         result.emplace_back("wrist_right", cameras.wrist[1].enabled);
         if (cameras.sixcam.enabled) {
@@ -99,7 +107,9 @@ bool build_profile_state(ProfileState* state,
                          const ProductConfiguration& configuration,
                          const RuntimeOptions& options,
                          std::string* error) {
-    const bool is_mango = configuration.profile == ProductProfile::mango;
+    // ego 档覆盖 mango（双目 head+腕部）与 mango_pro（六目+腕部），两者均无 VIVE。
+    const bool is_ego = configuration.profile == ProductProfile::mango ||
+                        configuration.profile == ProductProfile::mango_pro;
     const bool is_cherry = configuration.profile == ProductProfile::cherry;
 
     const std::string video_option_error =
@@ -120,15 +130,26 @@ bool build_profile_state(ProfileState* state,
         }
         return false;
     }
-    if (!is_mango && !is_cherry && cameras.active_count <= 0) {
+    if (!is_ego && !is_cherry && cameras.active_count <= 0) {
         *error = "No cameras";
         return false;
     }
-    if (is_mango && !configuration.wrist.allow_missing_devices) {
-        int expected = static_cast<int>(cameras.wrist.size());
-        if (configuration.sixcam_enabled) expected += 2;
+    // 严格模式：mango/mango_pro 都要求全部设备在位。期望数必须与
+    // discover_mango_cameras / discover_mango_pro_cameras 的 active_count
+    // 语义对齐：mango 双目档 = 腕部 x2 + head(+1)；mango_pro 六目档 =
+    // 腕部 x2 + 六目两路(+2)。
+    if (is_ego && !configuration.wrist.allow_missing_devices) {
+        int expected = static_cast<int>(cameras.wrist.size());  // 腕部 x2
+        const char* requirement = nullptr;
+        if (configuration.profile == ProductProfile::mango_pro) {
+            if (configuration.sixcam_enabled) expected += 2;  // jhh04 + jhh02
+            requirement = "mango_pro requires all devices (wrist x2 + sixcam)";
+        } else {
+            expected += 1;  // head（双目档）
+            requirement = "mango requires all devices (wrist x2 + head)";
+        }
         if (cameras.active_count != expected) {
-            *error = "mango requires all devices (wrist x2 + sixcam)";
+            *error = requirement;
             for (const std::string& message : cameras.camera_errors) {
                 *error += std::string("\n  ") + message;
             }
@@ -137,7 +158,7 @@ bool build_profile_state(ProfileState* state,
     }
 
     bool use_imu = options.use_imu;
-    if (is_mango && use_imu) {
+    if (is_ego && use_imu) {
         bool any_imu = false;
         for (const auto& cam : cameras.wrist) {
             if (cam.enabled && cam.config.has_imu) any_imu = true;
@@ -151,8 +172,9 @@ bool build_profile_state(ProfileState* state,
     bool use_vive = false;
     if (is_cherry) {
         printf("[vive] cherry profile, VIVE disabled\n");
-    } else if (is_mango) {
-        printf("[vive] mango profile, VIVE disabled\n");
+    } else if (is_ego) {
+        printf("[vive] %s profile, VIVE disabled\n",
+               std::string(product_profile_name(configuration.profile)).c_str());
     } else {
         int vive_count = detect_vive_trackers();
         use_vive = vive_count > 0;
