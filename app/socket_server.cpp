@@ -14,7 +14,7 @@ namespace {
 
 bool is_preview_channel(std::string_view channel) {
     return channel == "wrist_left" || channel == "wrist_right" ||
-           channel == "jhh04" || channel == "jhh02";
+           channel == "jhh04" || channel == "jhh02" || channel == "head";
 }
 
 bool is_absolute_path(std::string_view path) {

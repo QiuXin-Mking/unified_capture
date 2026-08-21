@@ -17,13 +17,19 @@ int main() {
     assert(addressed.preview_channel == "wrist_left");
     assert(addressed.preview_path == "/tmp/wrist-left.jpg");
 
-    for (const char* channel : {"wrist_left", "wrist_right", "jhh04", "jhh02"}) {
+    for (const char* channel :
+         {"wrist_left", "wrist_right", "jhh04", "jhh02", "head"}) {
         SocketCommand channel_preview = parse_socket_command(
             std::string("preview:") + channel + ":/tmp/p.jpg");
         assert(channel_preview.kind == SocketCommandKind::preview);
         assert(channel_preview.preview_channel == channel);
         assert(channel_preview.preview_path == "/tmp/p.jpg");
     }
+
+    SocketCommand head = parse_socket_command("preview:head:/tmp/foo.jpg\n");
+    assert(head.kind == SocketCommandKind::preview);
+    assert(head.preview_channel == "head");
+    assert(head.preview_path == "/tmp/foo.jpg");
 
     assert(parse_socket_command("status").kind == SocketCommandKind::status);
 
@@ -38,6 +44,8 @@ int main() {
     assert(parse_socket_command("unknown").kind == SocketCommandKind::unknown);
     assert(parse_socket_command("preview:").kind == SocketCommandKind::unknown);
     assert(parse_socket_command("preview:unknown:/tmp/x.jpg").kind ==
+           SocketCommandKind::unknown);
+    assert(parse_socket_command("preview:headx:/tmp/x.jpg").kind ==
            SocketCommandKind::unknown);
     assert(parse_socket_command("preview:jhh02:relative.jpg").kind ==
            SocketCommandKind::unknown);
