@@ -220,7 +220,7 @@ private:
             _exit(1);
         }
 
-        fifo_fd_ = open(fifo_path_.c_str(), O_WRONLY);
+        fifo_fd_ = open(fifo_path_.c_str(), O_WRONLY | O_CLOEXEC);
         if (fifo_fd_ < 0) {
             perror("open fifo for write");
             return false;
