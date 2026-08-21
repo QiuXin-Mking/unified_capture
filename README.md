@@ -6,7 +6,7 @@ RK3588 统一采集程序，四个 profile：`mango`（双目档，独立 JHH2 �
 
 | 设备 | VID/PID | 分辨率 | 帧率 | 输出 |
 |------|---------|--------|------|------|
-| mango 头部双目 head | 1bcf:2d50 | 3840×1200 | 30fps | H.265 MKV + IMU JSONL（无 Y8） |
+| mango 头部双目 head | 1bcf:2d56（SLZH） | 4000×1200 | 30fps | H.265 MKV + IMU JSONL（无 Y8，无磁力计） |
 | JHH2 左目（banana） | 1bcf:2d50 | 3840×1200 | 30fps | H.265 MKV + `.y8` + IMU JSONL |
 | JHH2 右目（banana） | 1bcf:2d50 | 3840×1200 | 30fps | H.265 MKV + `.y8` + IMU JSONL |
 | SixCam JHH02（六目双目侧） | 1bcf:2d50 | 4000×1200 | 30fps | H.265 MKV + `.y8` + IMU JSONL |
@@ -51,7 +51,7 @@ cp deploy/product.conf.example /etc/unified_capture/product.conf
 cp deploy/camera-map.conf.example /etc/unified_capture/camera-map.conf
 ```
 
-`product.conf` 可选择 `mango`、`mango_pro`、`banana` 或 `cherry`。`camera-map.conf` 的 `[mango]` 段（双目档）与 `[mango_pro]` 段（六目档）分别配置腕部 `SL`/`JHHSW`，`[mango_pro]` 额外用 `sixcam.enabled=true` 开启六目；双目档的头部 `head` 硬编码为独立 JHH2 双目（`1bcf:2d50`，3840×1200@30），无需在此声明。`[cherry]` 段固定要求 `5268:1218`、`3200x1200`、`H264`、30 fps；发现逻辑通过同一 sysfs USB device 父路径配对 `/dev/videoN` 与 `/dev/ttyACM*`，不会仅凭 bus number 配对。mango/mango_pro 的 `allow_missing_devices=true` 表示缺失部分设备时服务仍会就绪，`status` 返回 `"degraded":true`，并允许 `start`/`stop`。配置错误仍会阻止服务启动。
+`product.conf` 可选择 `mango`、`mango_pro`、`banana` 或 `cherry`。`camera-map.conf` 的 `[mango]` 段（双目档）与 `[mango_pro]` 段（六目档）分别配置腕部 `SL`/`JHHSW`，`[mango_pro]` 额外用 `sixcam.enabled=true` 开启六目；双目档的头部 `head` 硬编码为 SLZH 双目（`1bcf:2d56`，4000×1200@30），无需在此声明。`[cherry]` 段固定要求 `5268:1218`、`3200x1200`、`H264`、30 fps；发现逻辑通过同一 sysfs USB device 父路径配对 `/dev/videoN` 与 `/dev/ttyACM*`，不会仅凭 bus number 配对。mango/mango_pro 的 `allow_missing_devices=true` 表示缺失部分设备时服务仍会就绪，`status` 返回 `"degraded":true`，并允许 `start`/`stop`。配置错误仍会阻止服务启动。
 
 mango（双目档）与 mango_pro（六目档）均固定输出 H.265 MKV 与从视频帧异步解码的 IMU JSONL，不生成 `.y8`（六目档的 jhh04 例外，会额外输出 Y8 灰度），也不启动 AS5600 或 VIVE。腕部是否暴露麦克风及其 USB 音频身份、声道、采样率和左右关联仍是待确认事项；本版本不枚举、录制或封装音频。
 

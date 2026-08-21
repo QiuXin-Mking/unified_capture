@@ -8,7 +8,7 @@ RK3588 上的**统一多相机采集程序**。一套二进制，通过产品配
 
 | profile | 硬件 | 采集内容 | 主要输出 |
 |---------|------|----------|----------|
-| `mango` | 独立 JHH2 双目（head，3840×1200）+ 左/右腕部单目（SL/JHHSW） | 3 路视频 + 3 路 IMU 码带 | H.265 MKV + IMU JSONL（无 Y8、无 AS5600） |
+| `mango` | SLZH 双目（head，1bcf:2d56，4000×1200）+ 左/右腕部单目（SL/JHHSW） | 3 路视频 + 3 路 IMU 码带 | H.265 MKV + IMU JSONL（无 Y8、无 AS5600） |
 | `mango_pro` | 六目模组(JHH02/JHH04) + 左/右腕部单目（SL/JHHSW） | 4 路视频 + 4 路 IMU 码带 | H.265 MKV + IMU JSONL + jhh04 Y8（无 AS5600） |
 | `banana` | 2× JHH2 独立双目 + 六目 + AS5600 + VIVE Tracker | 视频 + IMU 码带 + 角度 + 位姿 | H.265 MKV + IMU/编码器/姿态 JSONL |
 | `cherry` | YCTC SC233HGS 双目（UVC H.264 + CDC ACM 串口） | 双目视频 + IMU/MAG/FRAME_META | H.264 MKV + 多个 JSONL（无 Y8） |
