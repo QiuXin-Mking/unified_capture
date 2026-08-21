@@ -289,12 +289,91 @@ CameraDiscoveryResult discover_banana_cameras() {
     return result;
 }
 
-// ── discover_mango_cameras ──
+// ── discover_mango_cameras (dual-eye profile) ──
 
 CameraDiscoveryResult discover_mango_cameras(
     const ProductConfiguration& configuration) {
     CameraDiscoveryResult result;
     result.profile = ProductProfile::mango;
+
+    std::vector<DiscoveredDevice> devices = scan_v4l2_devices();
+    printf("V4L2: found %zu device(s)\n", devices.size());
+    if (devices.empty()) {
+        result.degraded = configuration.wrist.allow_missing_devices;
+        return result;
+    }
+
+    for (const auto& d : devices) {
+        printf("  %s: %04x:%04x bus=%u product=\"%s\"\n",
+               d.path.c_str(), d.vid, d.pid, d.bus, d.product.c_str());
+    }
+
+    // ── Head: independent JHH2 dual-eye, not on JHH04's bus ──
+    uint32_t sixcam_bus = 0;
+    for (const auto& d : devices) {
+        if (d.vid == kSixVid && d.pid == kSixPid) {
+            sixcam_bus = d.bus;
+            break;
+        }
+    }
+    for (const auto& d : devices) {
+        if (d.vid == kJhh2Vid && d.pid == kJhh2Pid && d.bus != sixcam_bus) {
+            result.head.config = {"head", kJhh2Vid, kJhh2Pid, 0, 3840, 1200, 30,
+                                  16000000, 30, true,
+                                  ImuOrientation::HORIZONTAL_TOP, true, false};
+            result.head.enabled = true;
+            result.head.device_path = d.path;
+            result.active_count++;
+            printf("  %-12s -> %s bus=%u  3840x1200@30 (dual-eye head)\n",
+                   "head", d.path.c_str(), d.bus);
+            break;
+        }
+    }
+    if (!result.head.enabled) {
+        if (configuration.wrist.allow_missing_devices) {
+            result.degraded = true;
+        }
+        result.camera_errors.emplace_back("head jhh2 not found");
+    }
+
+    // ── Wrist: reuse existing wrist matching ──
+    std::vector<WristDeviceInfo> inventory;
+    inventory.reserve(devices.size());
+    for (const auto& d : devices) {
+        WristDeviceInfo device;
+        device.device_path = d.path;
+        device.vid = d.vid;
+        device.pid = d.pid;
+        device.product = d.product;
+
+        enumerate_mjpeg_formats(d.path, device.formats);
+
+        printf("  %s: product=\"%s\" formats=%zu\n",
+               d.path.c_str(), device.product.c_str(), device.formats.size());
+        inventory.push_back(std::move(device));
+    }
+
+    WristDiscoveryResult wrist =
+        match_wrist_cameras(configuration.wrist, inventory);
+    for (std::size_t i = 0; i < result.wrist.size(); ++i) {
+        result.wrist[i].config = wrist.cameras[i].config;
+        result.wrist[i].enabled = wrist.cameras[i].available;
+        result.wrist[i].device_path = wrist.cameras[i].device_path;
+    }
+    result.degraded = result.degraded || wrist.degraded;
+    result.camera_errors.insert(result.camera_errors.end(),
+                                wrist.errors.begin(), wrist.errors.end());
+    result.active_count += wrist.active_count;
+
+    return result;
+}
+
+// ── discover_mango_pro_cameras ──
+
+CameraDiscoveryResult discover_mango_pro_cameras(
+    const ProductConfiguration& configuration) {
+    CameraDiscoveryResult result;
+    result.profile = ProductProfile::mango_pro;
 
     std::vector<DiscoveredDevice> devices = scan_v4l2_devices();
     printf("V4L2: found %zu device(s)\n", devices.size());
@@ -435,6 +514,9 @@ CameraDiscoveryResult discover_cameras(const ProductConfiguration& configuration
     }
     if (configuration.profile == ProductProfile::mango) {
         return discover_mango_cameras(configuration);
+    }
+    if (configuration.profile == ProductProfile::mango_pro) {
+        return discover_mango_pro_cameras(configuration);
     }
     return discover_banana_cameras();
 }
