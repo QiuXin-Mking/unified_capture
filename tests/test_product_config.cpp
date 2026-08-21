@@ -44,7 +44,7 @@ int main() {
     assert(parsed.configuration->wrist.allow_missing_devices);
     assert(parsed.configuration->wrist.left_product == "SL");
     assert(parsed.configuration->wrist.right_product == "JHHSW");
-    assert(parsed.configuration->sixcam_enabled);
+    assert(!parsed.configuration->sixcam_enabled);  // mango 双目档忽略 sixcam.enabled
     assert(product_profile_name(ProductProfile::cherry) == "cherry");
 
     // parse_product_profile maps valid names and rejects unknowns.
@@ -98,6 +98,47 @@ int main() {
         load_product_configuration(product_config.string(), camera_map.string());
     assert(!missing_right.configuration.has_value());
     assert(missing_right.error.find("wrist_right.product") != std::string::npos);
+
+    // mango_pro：parse / name / 六目配置加载
+    assert(parse_product_profile("mango_pro") == ProductProfile::mango_pro);
+    assert(product_profile_name(ProductProfile::mango_pro) == "mango_pro");
+    {
+        std::ofstream output(product_config);
+        output << "product=mango_pro\n";
+    }
+    {
+        std::ofstream output(camera_map);
+        output << "[mango_pro]\n"
+               << "allow_missing_devices=true\n"
+               << "wrist_left.product=SL\n"
+               << "wrist_right.product=JHHSW\n"
+               << "sixcam.enabled=true\n";
+    }
+    const ProductConfigResult mango_pro =
+        load_product_configuration(product_config.string(), camera_map.string());
+    assert(mango_pro.configuration.has_value());
+    assert(mango_pro.configuration->profile == ProductProfile::mango_pro);
+    assert(mango_pro.configuration->sixcam_enabled);
+    assert(mango_pro.configuration->wrist.left_product == "SL");
+    assert(write_product_profile(product_config.string(), ProductProfile::mango_pro));
+
+    // mango 双目档：不写 sixcam.enabled，不应把 sixcam_enabled 置真
+    {
+        std::ofstream output(product_config);
+        output << "product=mango\n";
+    }
+    {
+        std::ofstream output(camera_map);
+        output << "[mango]\n"
+               << "allow_missing_devices=true\n"
+               << "wrist_left.product=SL\n"
+               << "wrist_right.product=JHHSW\n";
+    }
+    const ProductConfigResult mango_dual =
+        load_product_configuration(product_config.string(), camera_map.string());
+    assert(mango_dual.configuration.has_value());
+    assert(mango_dual.configuration->profile == ProductProfile::mango);
+    assert(!mango_dual.configuration->sixcam_enabled);
 
     std::filesystem::remove_all(directory);
     return 0;

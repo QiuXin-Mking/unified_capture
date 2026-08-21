@@ -59,6 +59,8 @@ ProductConfigResult load_product_profile(const std::string& path,
             *profile = ProductProfile::banana;
         } else if (value == "cherry") {
             *profile = ProductProfile::cherry;
+        } else if (value == "mango_pro") {
+            *profile = ProductProfile::mango_pro;
         } else {
             return error_result("unknown product: " + value);
         }
@@ -309,6 +311,8 @@ std::string_view product_profile_name(ProductProfile profile) {
             return "banana";
         case ProductProfile::cherry:
             return "cherry";
+        case ProductProfile::mango_pro:
+            return "mango_pro";
     }
     return "";
 }
@@ -324,14 +328,15 @@ ProductConfigResult load_product_configuration_for_profile(
 
     ProductConfiguration configuration;
     configuration.profile = profile;
-    if (profile == ProductProfile::mango) {
-        const auto mango = map.find("mango");
-        if (mango == map.end()) {
-            return error_result("missing camera-map section: mango");
+    if (profile == ProductProfile::mango || profile == ProductProfile::mango_pro) {
+        const std::string section_name(product_profile_name(profile));
+        const auto section = map.find(section_name);
+        if (section == map.end()) {
+            return error_result("missing camera-map section: " + section_name);
         }
 
         std::string allow_missing_devices;
-        result = required_value(mango->second, "allow_missing_devices",
+        result = required_value(section->second, "allow_missing_devices",
                                 &allow_missing_devices);
         if (!result.error.empty()) {
             return result;
@@ -344,24 +349,26 @@ ProductConfigResult load_product_configuration_for_profile(
             return error_result("allow_missing_devices must be true or false");
         }
 
-        result = required_value(mango->second, "wrist_left.product",
+        result = required_value(section->second, "wrist_left.product",
                                 &configuration.wrist.left_product);
         if (!result.error.empty()) {
             return result;
         }
-        result = required_value(mango->second, "wrist_right.product",
+        result = required_value(section->second, "wrist_right.product",
                                 &configuration.wrist.right_product);
         if (!result.error.empty()) {
             return result;
         }
 
-        // sixcam (optional, default false)
-        auto sixcam = mango->second.find("sixcam.enabled");
-        if (sixcam != mango->second.end()) {
-            if (sixcam->second == "true") {
-                configuration.sixcam_enabled = true;
-            } else if (sixcam->second != "false") {
-                return error_result("sixcam.enabled must be true or false");
+        // sixcam (optional, mango_pro only, default false)
+        if (profile == ProductProfile::mango_pro) {
+            auto sixcam = section->second.find("sixcam.enabled");
+            if (sixcam != section->second.end()) {
+                if (sixcam->second == "true") {
+                    configuration.sixcam_enabled = true;
+                } else if (sixcam->second != "false") {
+                    return error_result("sixcam.enabled must be true or false");
+                }
             }
         }
     } else if (profile == ProductProfile::cherry) {
@@ -398,6 +405,9 @@ std::optional<ProductProfile> parse_product_profile(std::string_view value) {
     }
     if (value == "cherry") {
         return ProductProfile::cherry;
+    }
+    if (value == "mango_pro") {
+        return ProductProfile::mango_pro;
     }
     return std::nullopt;
 }

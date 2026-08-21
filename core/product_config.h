@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-enum class ProductProfile { mango, banana, cherry };
+enum class ProductProfile { mango, banana, cherry, mango_pro };
 
 struct WristDeviceMap {
     bool allow_missing_devices = false;
