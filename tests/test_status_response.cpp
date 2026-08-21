@@ -38,6 +38,12 @@ int main() {
     assert(banana_sensors.as5600);
     assert(banana_sensors.vive);
 
+    const CaptureSensorStatus mango_pro_sensors = capture_sensor_status(
+        ProductProfile::mango_pro, true, true, true);
+    assert(mango_pro_sensors.imu);
+    assert(!mango_pro_sensors.as5600);
+    assert(!mango_pro_sensors.vive);
+
     CaptureStatusResponse cherry_status{
         "cherry", true, false, false, 0,
         {{"cherry_stereo", true}}, {},

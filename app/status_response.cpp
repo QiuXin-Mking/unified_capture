@@ -30,7 +30,7 @@ CaptureSensorStatus capture_sensor_status(ProductProfile profile,
     if (profile == ProductProfile::cherry) {
         return {true, false, false};
     }
-    if (profile == ProductProfile::mango) {
+    if (profile == ProductProfile::mango || profile == ProductProfile::mango_pro) {
         return {requested_imu, false, false};
     }
     return {requested_imu, requested_as5600, detected_vive};
