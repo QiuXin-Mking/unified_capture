@@ -122,7 +122,7 @@ systemctl start unified_capture
 
 ## 输出数据结构
 
-mango 的每次 session 创建 `jhh02/`、`jhh04/`、`wrist_left/`、`wrist_right/` 目录；每个目录包含 `*.mkv`（HEVC）与 `*.jsonl`（异步 IMU），不包含 `.y8`。详见 [docs/mango-device-overview.md](docs/mango-device-overview.md)。
+mango pro（六目档）的每次 session 创建 `jhh02/`、`jhh04/`、`wrist_left/`、`wrist_right/` 目录；每个目录包含 `*.mkv`（HEVC）与 `*.jsonl`（异步 IMU），不包含 `.y8`。详见 [docs/mango-pro-device-overview.md](docs/mango-pro-device-overview.md)；双目档（mango / mango plus）见 [docs/mango-device-overview.md](docs/mango-device-overview.md)。
 
 cherry 的每次 session 创建 `cherry_stereo/`，其中包含 `cherry_stereo.mkv`（H.264 3200×1200@30）、`video_frames.jsonl`、`imu.jsonl`、`mag.jsonl` 与 `frame_meta.jsonl`，不包含 `.y8`。同步分析使用 `python3 deploy/calc_cherry_sync.py <session_dir>`。
 

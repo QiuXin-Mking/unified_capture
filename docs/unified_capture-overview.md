@@ -16,7 +16,7 @@ RK3588 上的**统一多相机采集程序**。一套二进制，通过产品配
 
 各方案的详细说明：
 
-- **mango**（六目 + 腕部）：设备组成、采集管线、最终数据包详见 [mango-device-overview.md](mango-device-overview.md)。四路相机均输出 H.265 MKV + 异步 IMU JSONL，不生成 Y8、不启动 AS5600；`allow_missing_devices=true` 时缺失一侧腕部仍可启动（`status` 返回 `degraded:true`）。
+- **mango**（六目 + 腕部）：设备组成、采集管线、最终数据包详见 [mango-pro-device-overview.md](mango-pro-device-overview.md)。四路相机均输出 H.265 MKV + 异步 IMU JSONL，不生成 Y8、不启动 AS5600；`allow_missing_devices=true` 时缺失一侧腕部仍可启动（`status` 返回 `degraded:true`）。当前实现对应产品的**六目档（mango pro / mango pro plus）**；双目档（mango / mango plus）尚未支持，见 [mango-device-overview.md](mango-device-overview.md)。
 - **banana**（legacy 头部）：2× JHH2 独立双目 + 六目 + AS5600 + VIVE，输出 H.265 MKV + IMU/编码器/姿态 JSONL。
 - **cherry**：相机已编码的 H.264 直通 ffmpeg remux 成 MKV，不 JPEG 解码、不 MPP 二次编码；串口独立输出 IMU/MAG/FRAME_META。
 
@@ -108,7 +108,7 @@ echo "stop"   | nc -U /tmp/unified_capture.sock   # 停止采集
 | banana | `jhh2_left/ jhh2_right/ jhh02/ jhh04/` + 顶层 `encoder-*.jsonl`、`tracker*.jsonl` | MKV + jhh04 Y8 + IMU/编码器/姿态 JSONL |
 | cherry | `cherry_stereo/` | `cherry_stereo.mkv` + `video_frames/imu/mag/frame_meta` JSONL |
 
-mango 的完整目录树、字段表与命名规则见 [mango-device-overview.md](mango-device-overview.md)。
+mango 的完整目录树、字段表与命名规则见 [mango-pro-device-overview.md](mango-pro-device-overview.md)（六目档）。
 
 ---
 
@@ -125,7 +125,8 @@ mango 的完整目录树、字段表与命名规则见 [mango-device-overview.md
 
 ## 7. 相关文档
 
-- [mango-device-overview.md](mango-device-overview.md) — mango 设备采集与输出详解
+- [mango-pro-device-overview.md](mango-pro-device-overview.md) — mango pro（六目档）设备采集与输出详解
+- [mango-device-overview.md](mango-device-overview.md) — mango（双目档）设备采集与输出详解
 - [socket-control.md](socket-control.md) — Socket 控制协议
 - [video-pipeline.md](video-pipeline.md) — 视频管线
 - [device-ui-interface.md](device-ui-interface.md) — 前端接口定义

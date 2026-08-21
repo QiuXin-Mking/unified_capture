@@ -135,4 +135,5 @@ SD 卡
 ## 相关文档
 
 - [unified_capture-overview.md](unified_capture-overview.md) — 技术向介绍（架构 / 编译 / 协议）
-- [mango-device-overview.md](mango-device-overview.md) — mango 设备采集与输出详解
+- [mango-pro-device-overview.md](mango-pro-device-overview.md) — mango pro（六目档）设备采集与输出详解
+- [mango-device-overview.md](mango-device-overview.md) — mango（双目档）设备采集与输出详解
