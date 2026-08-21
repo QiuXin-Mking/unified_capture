@@ -163,9 +163,10 @@ bool build_profile_state(ProfileState* state,
         for (const auto& cam : cameras.wrist) {
             if (cam.enabled && cam.config.has_imu) any_imu = true;
         }
+        if (cameras.head.enabled && cameras.head.config.has_imu) any_imu = true;
         if (!any_imu) {
             use_imu = false;
-            printf("[imu] wrist cameras have no IMU, IMU disabled\n");
+            printf("[imu] ego cameras have no IMU, IMU disabled\n");
         }
     }
 

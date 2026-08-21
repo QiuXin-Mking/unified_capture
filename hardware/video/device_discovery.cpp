@@ -21,6 +21,9 @@ constexpr uint16_t kJhh2Vid = 0x1bcf;
 constexpr uint16_t kJhh2Pid = 0x2d50;
 constexpr uint16_t kSixVid = 0x1bcf;
 constexpr uint16_t kSixPid = 0x2d51;
+// mango 双目档 head：独立 SLZH 双目模组（1bcf:2d56，4000×1200@30）
+constexpr uint16_t kHeadVid = 0x1bcf;
+constexpr uint16_t kHeadPid = 0x2d56;
 
 struct DiscoveredDevice {
     std::string path;       // /dev/videoN
@@ -317,14 +320,14 @@ CameraDiscoveryResult discover_mango_cameras(
         }
     }
     for (const auto& d : devices) {
-        if (d.vid == kJhh2Vid && d.pid == kJhh2Pid && d.bus != sixcam_bus) {
-            result.head.config = {"head", kJhh2Vid, kJhh2Pid, 0, 3840, 1200, 30,
+        if (d.vid == kHeadVid && d.pid == kHeadPid && d.bus != sixcam_bus) {
+            result.head.config = {"head", kHeadVid, kHeadPid, 0, 4000, 1200, 30,
                                   16000000, 30, true,
                                   ImuOrientation::HORIZONTAL_TOP, true, false};
             result.head.enabled = true;
             result.head.device_path = d.path;
             result.active_count++;
-            printf("  %-12s -> %s bus=%u  3840x1200@30 (dual-eye head)\n",
+            printf("  %-12s -> %s bus=%u  4000x1200@30 (dual-eye head)\n",
                    "head", d.path.c_str(), d.bus);
             break;
         }
